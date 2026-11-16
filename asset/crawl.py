@@ -211,51 +211,48 @@ def crawl_api(base_url: str, client: Optional[httpx.Client] = None) -> list[Endp
             url = base_url.rstrip("/") + path
             try:
                 resp = client.get(url, timeout=5)
-                if resp.status_code < 400:
-                    ep = Endpoint(
-                        url=url,
-                        method="GET",
-                        discovered_by="api_crawl",
-                    )
-                    # If JSON, try to extract param names
-                    if "json" in resp.headers.get("Content-Type", ""):
-                        try:
-                            data = resp.json()
-                            if isinstance(data, dict):
-                                ep.params = list(data.keys())[:10]
-                            elif isinstance(data, list) and data:
-                                # List of objects: extract keys from first item
-                                if isinstance(data[0], dict):
-                                    ep.params = list(data[0].keys())[:10]
-                        except Exception:
-                            pass
-                    endpoints.append(ep)
+                # 오탐 제거: SPA(Angular 등)는 non-API 경로에도 index.html(200) 반환.
+                # 실제 API는 application/json. JSON만 endpoint로.
+                if resp.status_code >= 400 or "json" not in resp.headers.get("Content-Type", ""):
+                    continue
+                ep = Endpoint(
+                    url=url,
+                    method="GET",
+                    discovered_by="api_crawl",
+                )
+                # JSON 파싱: {"data": [...]} 래퍼 처리 (Juice Shop)
+                data = None
+                try:
+                    data = resp.json()
+                    if isinstance(data, dict) and isinstance(data.get("data"), list):
+                        data = data["data"]
+                except Exception:
+                    pass
+                if isinstance(data, list) and data and isinstance(data[0], dict):
+                    ep.params = list(data[0].keys())[:10]
+                elif isinstance(data, dict):
+                    ep.params = list(data.keys())[:10]
+                endpoints.append(ep)
 
-                    # For list endpoints, also probe individual item endpoints (e.g., /api/Products/1)
-                    if "json" in resp.headers.get("Content-Type", ""):
-                        try:
-                            data = resp.json()
-                            if isinstance(data, list) and data:
-                                # Try to find ID field
-                                id_field = None
-                                for key in ["id", "Id", "ID", "_id"]:
-                                    if isinstance(data[0], dict) and key in data[0]:
-                                        id_field = key
-                                        break
-                                if id_field:
-                                    first_id = data[0][id_field]
-                                    item_url = f"{url}/{first_id}"
-                                    item_resp = client.get(item_url, timeout=5)
-                                    if item_resp.status_code < 400:
-                                        item_ep = Endpoint(
-                                            url=item_url,
-                                            method="GET",
-                                            params=[id_field],  # Path parameter
-                                            discovered_by="api_crawl",
-                                        )
-                                        endpoints.append(item_ep)
-                        except Exception:
-                            pass
+                # List endpoint → item endpoint (e.g., /api/Products/1)
+                if isinstance(data, list) and data and isinstance(data[0], dict):
+                    id_field = None
+                    for key in ["id", "Id", "ID", "_id"]:
+                        if key in data[0]:
+                            id_field = key
+                            break
+                    if id_field:
+                        first_id = data[0][id_field]
+                        item_url = f"{url}/{first_id}"
+                        item_resp = client.get(item_url, timeout=5)
+                        if item_resp.status_code < 400 and "json" in item_resp.headers.get("Content-Type", ""):
+                            item_ep = Endpoint(
+                                url=item_url,
+                                method="GET",
+                                params=[id_field],
+                                discovered_by="api_crawl",
+                            )
+                            endpoints.append(item_ep)
             except Exception:
                 pass
 

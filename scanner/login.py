@@ -174,6 +174,20 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
                 log.info("login success (200): %s", login_ep.url)
                 return True
 
+        # DVWA: 로그인 실패 → DB reset 후 재로그인 (치icken-and-egg 해결)
+        # admin 비밀번호가 빈 문자열 등으로 나쁜 상태면, setup.php 로 DB reset 후 재시도.
+        if is_dvwa and _login_failed(resp):
+            log.info("DVWA login failed → DB reset + re-login")
+            _dvwa_db_reset(client, asset, credentials)
+            # 재로그인
+            tok = _fetch_token()
+            if tok:
+                data["user_token"] = tok
+            resp = client.post(login_ep.url, data=data, timeout=15)
+            if _login_succeeded(resp):
+                log.info("DVWA login success after DB reset")
+                return True
+
         log.info("login attempt: %s → %d loc=%r", login_ep.url, resp.status_code, resp.headers.get("location", ""))
         return False
 

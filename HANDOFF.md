@@ -1,7 +1,7 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-11
-**현재 단계**: 실전 테스트 — DVWA **실제 findings 40개** (sqli 10, xss 19, idor 8, cve 3). 다음: Juice Shop findings (API 크롤링 갭)
+**현재 단계**: 실전 테스트 — **DVWA 40 + Juice Shop 11 = 51 findings**. DVWA 로그인 비결정성 **완전 해결** (치icken-and-egg: 로그인 실패 시 DB reset 폴백). 다음: Juice Shop XSS/SQLi body 스캔 정밀화
 
 ## 완료된 작업
 
@@ -79,7 +79,23 @@
 - **DVWA: 40 findings** (이전 15) — **sqli 10** (sqli/ boolean + brute/ SQL error), **xss 19** (xss_r/ reflected), idor 8, cve 3. **실제 취약점 탐지 성공.**
 - **Juice Shop: 0 findings** — 크롤러가 실제 `/api/*`가 아닌 generic probe 경로(v1/v2/graphql/openapi.json) 발견. API 크롤링 갭.
 
-**Colima**: Running (다음 세션 stop 필요). **Git**: 5차 수정분 커밋 예정.
+### 실전 테스트 — Juice Shop findings + DVWA 비결정성 **완전 해결** (6차 세션)
+
+**진단 (6차, 실측):**
+- **Juice Shop 0 findings 원인**: (1) `crawl_api`가 **Content-Type을 안 확인** → SPA(Angular)가 non-API 경로에도 `index.html`(200 HTML) 반환 → `/v1`, `/v2`, `/graphql`, `/openapi.json` 등 **9개 오탐**. (2) `ep.params`를 **JSON 응답 키**(`["status","data"]`)로 채움 — 실제 query param 아님. (3) **핵심**: Juice Shop의 취약점은 **POST/PUT JSON body**에 있는데, `scan_api`는 **GET query param만** 테스트. GET query(`?category=`, `?search=`)는 sanitize되어 SQLi/XSS 없음(실측: count 항상 46, 반사 없음).
+- **DVWA 로그인 비결정성 재발 원인**: admin의 **DB 비밀번호가 빈 문자열**(`md5('')=d41d8cd9...`)이 되어 있었음 → `md5('password')`와 안 맞아서 로그인 실패. **치icken-and-egg**: `_dvwa_db_reset`(수정 수단)는 로그인 **성공 후**에만 호출 → DB가 나쁘면 reset이 한 번도 트리거 안 됨.
+
+**수정:**
+1. `asset/crawl.py` — **Content-Type 필터** (JSON만 endpoint, SPA HTML 오탐 제거) + `{"data":[...]}` 래퍼 처리로 **item endpoint 자동 발견** (`/api/Products/1`)
+2. `scanner/api.py` — **`scan_rest_body_injection` 추가**: POST/PUT JSON body로 XSS/SQLi/NoSQL payload 테스트 (201/200+반사, 500, SQL error). `scan_api`에 통합. `base_url`을 `asset.base_url` 우선 사용 (test_live 호환)
+3. `scanner/login.py` — **DVWA 로그인 실패 시 DB reset + 재로그인 폴백** (치icken-and-egg 해결)
+
+**6차 테스트 결과:**
+- **DVWA: 40 findings** (sqli 10, xss 19, idor 8, cve 3) — 로그인 성공, 비결정성 완전 해결 (깨뜨린 DB도 자동 복구, 3/3)
+- **Juice Shop: 11 findings** (fuzz_anomaly — `{"$gt":""}`→500 NoSQL injection 신호) — 오탐 9개 제거, 실제 API 3개(Products, Products/1, Challenges) 발견
+- **TOTAL: 51 findings**
+
+**Colima**: Running (다음 세션 stop 필요). **Git**: 6차 수정분 커밋 예정.
 
 ## 다음 단계
 
@@ -90,10 +106,11 @@
 5. ~~`scanner/login.py` (DVWA 로그인)~~ ✓
 6. ~~DVWA setup.php `create_db` 버튼 수정 + 재로그인~~ ✓
 7. ~~Juice Shop API 개별 endpoint + path param~~ ✓
-8. ~~**DVWA 로그인 비결정성 해결**~~ ✓ (4차: `Login` 버튼 누락이 원인 — base_url에 "dvwa" 없어 DVWA 분기 미적용. `user_token` field로 DVWA 감지 + Location 헤더로 성공/실패 판별 + 재시도. 8/8 성공)
-9. ~~**실전 테스트 재실행**~~ ✓ (5차: DVWA 40 findings — sqli 10, xss 19, idor 8, cve 3. 실제 취약점 탐지)
-10. **Juice Shop findings** — API 크롤링 갭: generic probe(v1/v2/graphql) 대신 실제 `/api/*` endpoint 발견 + findings
-11. **범용성 보완** (장기 목표: 범용 해킹 툴)
+8. ~~**DVWA 로그인 비결정성 해결**~~ ✓ (4차: `Login` 버튼 누락 — `user_token` field로 DVWA 감지 + Location 헤더로 성공/실패 판별 + 재시도)
+9. ~~**실전 테스트 재실행**~~ ✓ (5차: DVWA 40 findings — sqli 10, xss 19, idor 8, cve 3)
+10. ~~**Juice Shop findings**~~ ✓ (6차: 11 findings — Content-Type 필터 + item endpoint 발견 + body injection 스캐너. DVWA 비결정성 완전 해결)
+11. **Juice Shop XSS/SQLi body 스캔 정밀화** — PUT /api/Products/1 body `name`이 저장·반사됨(실측) — XSS/SQLi 탐지. NoSQL injection(fuzz_anomaly)을 dedicated vuln_type로 승격
+12. **범용성 보완** (장기 목표: 범용 해킹 툴)
     - ~~path parameter 일반화 (xss, ssrf, idor scanner)~~ ✓ (5차: 완전 폼 전송)
     - OpenAPI/Swagger 자동 탐지 (`/openapi.json`, `/swagger.json`)
     - DB reset 일반화 (asset별 설정, DVWA 전용 코드 분리)
@@ -193,10 +210,10 @@ bugbounty/
 
 | 앱 | 상태 | 문제 |
 |----|------|------|
-| Juice Shop | `:3000` 200 OK | 0 findings — 크롤러가 generic probe(v1/v2/graphql/openapi.json)만 발견, 실제 `/api/*` 미발견 |
-| DVWA | `:8081` | **40 findings** (sqli 10, xss 19, idor 8, cve 3) — 실제 취약점 탐지 성공 |
+| Juice Shop | `:3000` 200 OK | **11 findings** (fuzz_anomaly — NoSQL injection 신호) — 오탐 9개 제거, 실제 API 3개 발견 |
+| DVWA | `:8081` | **40 findings** (sqli 10, xss 19, idor 8, cve 3) — 비결정성 완전 해결 |
 
-**원인 (5차 확인)**: sqli/xss/idor 스캐너가 폼의 다른 필드(`Submit`)를 안 보내 DVWA 쿼리 미실행 + `scan_web` 비인증 클라이언트. 완전 폼 전송 + 인증 클라이언트 전달로 해결.
+**원인 (5~6차 확인)**: (5차) sqli/xss/idor가 폼의 다른 필드(`Submit`)를 안 보내 DVWA 쿼리 미실행 + `scan_web` 비인증 클라이언트 → 완전 폼 전송 + 인증 클라이언트 전달로 해결. (6차) Juice Shop: SPA가 non-API 경로에도 HTML(200) 반환 → Content-Type 필터 + item endpoint 발견 + body injection 스캐너. DVWA: admin DB 비밀번호가 빈 문자열 → 로그인 실패 시 DB reset + 재로그인 폴백.
 
 ## 해결 방안
 
@@ -211,5 +228,5 @@ bugbounty/
 9. ~~DVWA setup.php `create_db` + 재로그인~~ (완료)
 10. ~~Juice Shop API 개별 endpoint + path param~~ (완료)
 11. ~~DVWA 로그인 비결정성 해결~~ (4차 완료 — `Login` 버튼 누락 원인, `user_token` 감지 + Location 판별)
-12. ~~실전 테스트: DVWA 실제 findings~~ ✓ (5차: 40 findings) / Juice Shop findings (진행 중)
+12. ~~실전 테스트: DVWA + Juice Shop 실제 findings~~ ✓ (5~6차: DVWA 40 + Juice Shop 11 = 51 findings)
 13. 범용성 보완 (OpenAPI 탐지, path param 일반화, DB reset 일반화)

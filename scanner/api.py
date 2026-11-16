@@ -125,6 +125,82 @@ def scan_rest_injection(base_url: str, endpoint: str, params: dict[str, str]) ->
     return findings
 
 
+# ── API body injection (POST/PUT JSON) ───────────────────────────────
+
+API_BODY_FIELDS = [
+    "name", "username", "email", "message", "description",
+    "firstName", "lastName", "comment", "title", "content",
+]
+
+API_BODY_XSS = [
+    '<script>alert(1)</script>',
+    '<img src=x onerror=alert(1)>',
+]
+
+API_BODY_SQLI = [
+    "' OR '1'='1",
+    "1' OR '1'='1' --",
+]
+
+
+def scan_api_body(base_url: str, endpoint: str, client: Optional[httpx.Client] = None) -> list[Finding]:
+    """API: POST/PUT JSON body 로 XSS/SQLi 주입.
+
+    REST API의 취약점은 GET query가 아니라 body에 있다 (Juice Shop 등).
+    200 + payload 반사 또는 SQL error 신호로 탐지.
+    """
+    own_client = client is None
+    if own_client:
+        client = httpx.Client(timeout=10, follow_redirects=True)
+    findings = []
+    url = endpoint if endpoint.startswith("http") else f"{base_url}{endpoint}"
+
+    # Baseline: GET 으로 현재 상태 (item endpoint) 또는 list 확인
+    try:
+        baseline = client.get(url, timeout=10)
+    except Exception:
+        baseline = None
+
+    for method in ("POST", "PUT"):
+        for field in API_BODY_FIELDS:
+            for payload, vuln in [(p, "xss") for p in API_BODY_XSS] + [(p, "sqli") for p in API_BODY_SQLI]:
+                body = {field: payload}
+                try:
+                    resp = client.request(method, url, json=body, timeout=10)
+                except Exception:
+                    continue
+                if resp.status_code >= 400:
+                    continue
+                text = resp.text
+                # XSS: payload가 응답에 반사
+                if vuln == "xss" and payload in text:
+                    findings.append(Finding(
+                        vuln_type="xss",
+                        severity="medium",
+                        endpoint=url,
+                        method=method,
+                        evidence=f"Reflected XSS in API body: {field}={payload!r} reflected in {method} response",
+                        poc_request={"method": method, "url": url, "body": body},
+                        raw_data={"status_code": resp.status_code},
+                    ))
+                # SQLi: SQL error 신호
+                elif vuln == "sqli":
+                    text_lower = text.lower()
+                    if any(kw in text_lower for kw in ["sql", "syntax", "mysql", "sqlite", "pgsql", "unterminated"]):
+                        findings.append(Finding(
+                            vuln_type="sqli",
+                            severity="high",
+                            endpoint=url,
+                            method=method,
+                            evidence=f"SQL error in API body: {field}={payload!r}",
+                            poc_request={"method": method, "url": url, "body": body},
+                            raw_data={"status_code": resp.status_code, "snippet": text[:200]},
+                        ))
+    if own_client:
+        client.close()
+    return findings
+
+
 # ── GraphQL ───────────────────────────────────────────────────────────
 
 def scan_graphql_introspection(base_url: str, endpoint: str = "/graphql") -> list[Finding]:
@@ -201,7 +277,8 @@ def scan_graphql_batching(base_url: str, endpoint: str = "/graphql") -> list[Fin
 def scan_api(asset: Asset) -> list[Finding]:
     """API 스캔: REST + GraphQL."""
     findings = []
-    base_url = f"https://{asset.domain}" if not asset.domain.startswith("http") else asset.domain
+    # base_url 우선 (test_live는 Asset(base_url=...)), 없으면 domain
+    base_url = asset.base_url if asset.base_url else (f"https://{asset.domain}" if asset.domain and not asset.domain.startswith("http") else asset.domain)
 
     for endpoint in asset.endpoints:
         # REST
@@ -218,6 +295,9 @@ def scan_api(asset: Asset) -> list[Finding]:
             findings.extend(scan_rest_rate_limit(base_url, endpoint))
             if params:
                 findings.extend(scan_rest_injection(base_url, endpoint, params))
+            # API body injection (POST/PUT JSON) — REST API 취약점은 body에 있다
+            if "/api/" in endpoint:
+                findings.extend(scan_api_body(base_url, endpoint))
 
         # GraphQL
         if "/graphql" in endpoint:
