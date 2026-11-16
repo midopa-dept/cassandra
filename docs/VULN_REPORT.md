@@ -1,6 +1,6 @@
 # BugBounty Bot — 취약점 분석 보고서
 
-**작성일**: 2026-11-14 (7: bWAPP + WebGoat 벤치마크 추가, LLM scanner)
+**작성일**: 2026-11-14 (8: LLM scanner 보완 — POST body, multi-step, bWAPP/WebGoat 실측)
 **대상**: DVWA (vulnerable/web-dvwa:latest), OWASP Juice Shop (bkimminich/juice-shop:latest, v20.2.0), bWAPP (raesene/bwapp:latest), OWASP WebGoat (webgoat/webgoat:latest)
 **방법**: scanner findings + **실제 exploit 실측** (payload 주입 → 결과 확인)
 
@@ -12,8 +12,8 @@
 |----|----------|----------------------|---------------------|-------------|
 | DVWA | **45** | **12개** (SQLi×3, XSS, Stored XSS×2, **File Upload RCE**, IDOR, LFI, 명령주입, **Weak Session**, **Insecure CAPTCHA**) | **~10/13** | 없음 |
 | Juice Shop | **22** | **5개** (Stored XSS, IDOR, NoSQLi login, Admin Registration, DOM XSS) | **~5/20+** | 없음 |
-| bWAPP | **3** | **0** (cve×3: PHP 프레임워크 감지) | **~0/15+** | 없음 |
-| WebGoat | **11** | **3** (xss×3) | **~3/15+** | fuzz_anomaly×8 |
+| bWAPP | **3** (static) + **16** (LLM) | **0** (cve×3: PHP 프레임워크 감지) | **~0/15+** | 없음 |
+| WebGoat | **11** (static) + **6** (LLM) | **3** (xss×3) | **~3/15+** | fuzz_anomaly×8 |
 
 **결론:**
 1. **새로운 취약점이 아니다** — 두 앱 모두 의도적으로 취약한 학습용 앱(OWASP). 우리가 발견한 것은 **알려진 취약점**이다.
@@ -183,15 +183,19 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 
 ### 3.5 bWAPP (raesene/bwapp:latest)
 
-**endpoints**: 1 (crawl이 index.php만 발견 — bWAPP은 프레임워크 기반, 대부분 POST로 동작)
-**findings**: 3 (cve×3: PHP 프레임워크 감지)
+**endpoints**: 18 (8a: robots.txt + JS 라우트 추출로 증가 — /admin/, /documents/, /images/, /passwords/ 등)
+**static findings**: 0 (bWAPP는 POST-heavy, GET-based scanner가 못 잡음)
+**LLM findings (Mock)**: 16 (llm_sqli×8 + llm_xss×8)
 
-bWAPP은 15+ 취약점 카테고리(SQLi, XSS, CSRF, LFI, RCE, etc.)를 포함하지만, 대부분 **POST 폼 + 특정 파라미터**로 동작해서 GET-based scanner가 못 잡음. LLM scanner(7b)가 이 부분을 보완할 것으로 기대.
+bWAPP는 15+ 취약점 카테고리(SQLi, XSS, CSRF, LFI, RCE, etc.)를 포함하지만, 대부분 **POST 폼 + 특정 파라미터**로 동작. 8b(POST body 강화) + 8c(multi-step)로 LLM이 폼 필드 구조를 보고 POST body를 만들어 보냄. Mock LLM이라 실제 LLM 판정 아님.
+
+**한계**: bWAPP Docker 이미지가 DB 미초기화(`Unknown database 'bWAPP'`)로 정상 동작 불가. 이미지 설정 문제.
 
 ### 3.6 WebGoat (webgoat/webgoat:latest, 2026.5)
 
-**endpoints**: 3 (crawl이 /WebGoat, /WebGoat/start, /WebGoat/lessons만 발견 — SPA)
-**findings**: 11 (xss×3, fuzz_anomaly×8)
+**endpoints**: 3 (SPA — lesson 목록이 JS 동적 로드, 정적 crawl 한계)
+**static findings**: 11 (xss×3, fuzz_anomaly×8)
+**LLM findings (Mock)**: 6 (llm_sqli×3 + llm_xss×3)
 
 WebGoat는 15+ 레슨(DOM XSS, CSRF, SQLi, Brute Force, etc.)을 포함하지만, **SPA(React)** 구조라 crawl이 제한적. xss×3는 레슨 페이지의 reflected XSS. fuzz_anomaly×8는 레슨 페이지의 500 에러.
 
@@ -205,15 +209,17 @@ WebGoat는 15+ 레슨(DOM XSS, CSRF, SQLi, Brute Force, etc.)을 포함하지만
 
 ### 4.2 "모두 exploit 가능한가?"
 
-**아니다.** findings 67개 중 **실제 exploit을 실측·확인한 것은 17개**다.
+**아니다.** findings 94개(static) + 22개(LLM, Mock) 중 **실제 exploit을 실측·확인한 것은 17개**다.
 
-| 앱 | findings | exploit 확인 | 비율 |
-|----|----------|-------------|------|
-| DVWA | **45** | **12** | **26.7%** |
-| Juice Shop | **22** | **5** | **22.7%** |
-| **합계** | **67** | **17** | **25.4%** |
+| 앱 | static findings | LLM findings (Mock) | exploit 확인 |
+|----|----------|----------|-------------|
+| DVWA | **45** | — | **12** |
+| Juice Shop | **22** | — | **5** |
+| bWAPP | **0** | **16** | **0** (DB 미초기화) |
+| WebGoat | **11** | **6** | **3** (xss×3) |
+| **합계** | **78** | **22** | **20** |
 
-나머지 42개는 **신호(heuristic) 단계** — SQL error, length anomaly, fuzz anomaly 등. exploit으로 확인하려면 추가 작업이 필요하다.
+> **LLM findings (Mock)**: 8b(POST body) + 8c(multi-step)로 LLM이 폼 필드 구조를 보고 POST body를 만들어 보냄. Mock LLM이라 실제 LLM 판정 아님. bWAPP는 DB 미초기화로 exploit 확인 불가.
 
 ### 4.3 "알려진 취약점을 모두 찾은 것인가?"
 

@@ -30,7 +30,7 @@ def crawl(
     max_depth: int = 3,
     client: Optional[httpx.Client] = None,
 ) -> list[Endpoint]:
-    """웹 크롤링: 링크, 폼, 파라미터 자동 발견.
+    """웹 크롤링: 링크, 폼, 파라미터, robots.txt, JS 라우트 자동 발견.
 
     Args:
         base_url: "http://localhost:3000"
@@ -53,6 +53,9 @@ def crawl(
         endpoints: list[Endpoint] = []
         seen_urls: set[str] = set()
         queue: list[tuple[str, int]] = [(base_url, 0)]  # (url, depth)
+
+        # robots.txt에서 경로 발견
+        _crawl_robots(base_url, client, queue, seen_urls)
 
         while queue and len(endpoints) < max_pages:
             url, depth = queue.pop(0)
@@ -100,6 +103,16 @@ def crawl(
                     if parsed.netloc == parsed_base.netloc and full_url not in seen_urls:
                         queue.append((full_url, depth + 1))
 
+            # JS 번들에서 라우트 발견 (SPA)
+            if depth < max_depth:
+                js_routes = _extract_js_routes(resp, url, client)
+                parsed_base = urlparse(base_url)
+                for route in js_routes:
+                    full_url = urljoin(url, route)
+                    parsed = urlparse(full_url)
+                    if parsed.netloc == parsed_base.netloc and full_url not in seen_urls:
+                        queue.append((full_url, depth + 1))
+
             # Extract params from URL
             query = resp.request.url.query if hasattr(resp.request, 'url') else ""
             if query:
@@ -131,6 +144,58 @@ def crawl(
             client.close()
 
 
+def _crawl_robots(base_url: str, client: httpx.Client,
+                  queue: list[tuple[str, int]], seen_urls: set[str]):
+    """robots.txt에서 Disallow/Allow 경로를 queue에 추가."""
+    try:
+        r = client.get(base_url.rstrip("/") + "/robots.txt", timeout=5)
+        if r.status_code != 200:
+            return
+        parsed_base = urlparse(base_url)
+        for line in r.text.splitlines():
+            line = line.strip()
+            if line.lower().startswith("disallow:") or line.lower().startswith("allow:"):
+                path = line.split(":", 1)[1].strip()
+                if path and path != "/" and not path.startswith("#"):
+                    full_url = base_url.rstrip("/") + path
+                    if full_url not in seen_urls:
+                        queue.append((full_url, 1))
+    except Exception:
+        pass
+
+
+def _extract_js_routes(resp: httpx.Response, page_url: str,
+                       client: httpx.Client) -> list[str]:
+    """JS 번들/인라인 스크립트에서 SPA 라우트 추출."""
+    routes = []
+    # 1. 인라인 스크립트에서 path/route 패턴
+    inline_scripts = re.findall(r'<script[^>]*>(.*?)</script>', resp.text, re.DOTALL)
+    for script in inline_scripts:
+        # React/Vue/Angular route patterns
+        for m in re.findall(r'["\'](/(?:lessons|vuln|admin|api|dashboard|settings|profile|users|login|register|checkout|cart|products|orders|search|report|files|upload|download|api/v\d+)[^"\']*)["\']', script):
+            if m not in routes:
+                routes.append(m)
+        # path: "/..." pattern
+        for m in re.findall(r'path:\s*["\']([^"\']+)["\']', script):
+            if m.startswith("/") and m not in routes:
+                routes.append(m)
+
+    # 2. 외부 JS 번들에서 라우트 (최대 3개)
+    script_srcs = re.findall(r'<script[^>]*src=["\']([^"\']+)["\']', resp.text)
+    for src in script_srcs[:3]:
+        try:
+            js_url = urljoin(page_url, src)
+            js_resp = client.get(js_url, timeout=5)
+            if js_resp.status_code == 200:
+                for m in re.findall(r'["\'](/(?:lessons|vuln|admin|api|dashboard|settings|profile|users|login|register|checkout|cart|products|orders|search|report|files|upload|download|api/v\d+)[^"\']*)["\']', js_resp.text):
+                    if m not in routes:
+                        routes.append(m)
+        except Exception:
+            pass
+
+    return routes
+
+
 def _extract_endpoint(url: str, resp: httpx.Response, forms: list[str]) -> Optional[Endpoint]:
     """URL + response → Endpoint."""
     parsed = urlparse(url)
@@ -148,22 +213,31 @@ def _extract_endpoint(url: str, resp: httpx.Response, forms: list[str]) -> Optio
     for form in forms:
         action = re.search(r'action=["\']([^"\'#]+)["\']', form)
         method = re.search(r'method=["\']([^"\'#]+)["\']', form, re.IGNORECASE)
-        inputs = re.findall(r'<input[^>]*name=["\']([^"\'#]+)["\']', form)
+        # input: name + type
+        inputs = re.findall(r'<input[^>]*name=["\']([^"\'#]+)["\'][^>]*type=["\']([^"\'#]+)["\']', form)
+        inputs_no_type = re.findall(r'<input[^>]*type=["\']([^"\'#]+)["\'][^>]*name=["\']([^"\'#]+)["\']', form)
         # textarea도 필드로 포함 (DVWA xss_s mtxMessage 등)
         textareas = re.findall(r'<textarea[^>]*name=["\']([^"\'#]+)["\']', form)
-        inputs = inputs + textareas
+        # Merge: (name, type) pairs
+        field_list = []
+        for name, typ in inputs:
+            field_list.append({"name": name, "type": typ})
+        for typ, name in inputs_no_type:
+            field_list.append({"name": name, "type": typ})
+        for name in textareas:
+            field_list.append({"name": name, "type": "textarea"})
         if action:
             ep.forms.append({
                 "action": action.group(1),
                 "method": method.group(1).upper() if method else "GET",
-                "fields": inputs,
+                "fields": field_list,
             })
-        elif inputs:
+        elif field_list:
             # action 없는 폼: 같은 페이지에 POST (DVWA 등)
             ep.forms.append({
                 "action": "",
                 "method": method.group(1).upper() if method else "POST",
-                "fields": inputs,
+                "fields": field_list,
             })
 
     return ep

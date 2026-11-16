@@ -32,7 +32,7 @@ Analyze this page and plan concrete security tests.
 
 Page URL: {url}
 HTTP status: {status}
-Form fields: {fields}
+Form fields (name: type): {fields}
 HTML (truncated):
 {html}
 
@@ -40,13 +40,27 @@ Plan up to 3 concrete tests for the most likely vulnerabilities on THIS page
 (SQLi, XSS, IDOR, auth bypass, SSRF, injection, etc.).
 For each test, give the exact request to send.
 
+IMPORTANT:
+- If the page has a form, use POST with the form fields.
+- For form-based apps (PHP, etc.), use "body" as URL-encoded form data: "username=admin&password=x"
+- For REST/JSON APIs, use "body" as JSON: "{{\\"username\\": \\"admin\\"}}"
+- Put the payload in the appropriate field (e.g., username, password, id, search).
+- "params" is for URL query parameters only (?key=value).
+- If the page has a login form, you may plan a multi-step test using "steps":
+  [{{"action": "login", "url": "login URL", "body": "username=admin&password=..."}},
+   {{"action": "get", "url": "protected page URL"}}]
+  This logs in first, then accesses a protected page. Use this to find
+  vulnerabilities on pages that require authentication.
+
 Respond with JSON only:
 {{"tests": [
   {{"vuln_type": "sqli|xss|idor|ssrf|auth_bypass|injection|other",
     "method": "GET|POST",
     "url": "full URL",
     "params": {{"field": "payload"}},
-    "body": "form body or empty",
+    "body": "form body (url-encoded or JSON) or empty",
+    "content_type": "form|json",
+    "steps": [{{"action": "login|get|post", "url": "...", "body": "..."}}],
     "expect": "what response signal proves the vuln"}}
 ]}}
 If the page has no testable input, respond {{"tests": []}}.
@@ -99,24 +113,70 @@ def _page_summary(client: httpx.Client, url: str) -> tuple[int, str]:
 
 
 def _execute_test(client: httpx.Client, test: dict, base_url: str) -> tuple[int, str]:
-    """테스트 계획 1개 실행 → (status, body)."""
+    """테스트 계획 1개 실행 → (status, body).
+
+    "steps"가 있으면 multi-step: login(POST) → 그 다음 페이지 GET/POST.
+    """
+    steps = test.get("steps")
+    if steps:
+        return _execute_steps(client, steps, base_url)
+
     method = test.get("method", "GET").upper()
     url = test.get("url", "")
     if not url.startswith("http"):
         url = base_url.rstrip("/") + "/" + url.lstrip("/")
     params = test.get("params") or {}
     body = test.get("body") or ""
+    content_type = test.get("content_type", "")
     try:
         if method == "POST":
-            if body and not params:
-                r = client.post(url, content=body, timeout=10)
-            else:
+            if body:
+                if content_type == "json":
+                    r = client.post(url, content=body,
+                                     headers={"Content-Type": "application/json"},
+                                     timeout=10)
+                else:
+                    r = client.post(url, content=body,
+                                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                                    timeout=10)
+            elif params:
                 r = client.post(url, data=params, timeout=10)
+            else:
+                r = client.post(url, timeout=10)
         else:
             r = client.get(url, params=params, timeout=10)
         return r.status_code, r.text
     except Exception as e:
         return 0, f"request error: {e}"
+
+
+def _execute_steps(client: httpx.Client, steps: list, base_url: str) -> tuple[int, str]:
+    """multi-step: 각 step을 순서대로 실행, 마지막 step의 결과를 반환.
+
+    step: {"action": "login|get|post", "url": "...", "body": "..."}
+    login = POST(인증), get/post = 그 다음 요청.
+    """
+    last_status, last_body = 0, ""
+    for step in steps:
+        action = step.get("action", "get").lower()
+        url = step.get("url", "")
+        if not url.startswith("http"):
+            url = base_url.rstrip("/") + "/" + url.lstrip("/")
+        body = step.get("body") or ""
+        try:
+            if action in ("login", "post"):
+                if body:
+                    r = client.post(url, content=body,
+                                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                                    timeout=10)
+                else:
+                    r = client.post(url, timeout=10)
+            else:
+                r = client.get(url, timeout=10)
+            last_status, last_body = r.status_code, r.text
+        except Exception as e:
+            return 0, f"step error: {e}"
+    return last_status, last_body
 
 
 def scan_llm_endpoint(asset: Asset, endpoint: Endpoint, client: httpx.Client,
@@ -133,7 +193,11 @@ def scan_llm_endpoint(asset: Asset, endpoint: Endpoint, client: httpx.Client,
 
     fields = []
     for f in (endpoint.forms or []):
-        fields.extend(f.get("fields") or [])
+        for field in (f.get("fields") or []):
+            if isinstance(field, dict):
+                fields.append(f"{field.get('name','?')}: {field.get('type','text')}")
+            else:
+                fields.append(str(field))
 
     # 1. 분석: 테스트 계획
     try:

@@ -204,7 +204,16 @@ def scan_stored_xss(asset: Asset, endpoint: Endpoint, client: httpx.Client) -> l
 
     for form in endpoint.forms:
         action = form.get("action", "")
-        fields = form.get("fields", [])
+        raw_fields = form.get("fields", [])
+        if not raw_fields:
+            continue
+        # dict 필드 → name 리스트 (8b: name+type)
+        fields = []
+        for f in raw_fields:
+            if isinstance(f, dict):
+                fields.append(f.get("name", ""))
+            else:
+                fields.append(str(f))
         if not fields:
             continue
         # action이 상대경로면 base_url에 붙임

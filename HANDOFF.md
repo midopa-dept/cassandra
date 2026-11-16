@@ -1,8 +1,8 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-14
-**현재 단계**: **단계 7 (일반화) 완료** → **단계 8 (실전 HackerOne) 대기**
-**현재 블록**: 8 — 실전 HackerOne 프로그램에서 자동 스캔→triage→제출 (API 키 필요)
+**현재 단계**: **단계 8 (LLM scanner 보완) 완료** → **단계 9 (실전 HackerOne) 대기**
+**현재 블록**: 9 — 실전 HackerOne 프로그램에서 자동 스캔→triage→제출 (API 키 필요)
 
 ---
 
@@ -31,9 +31,10 @@
 | 4. 자동화 | auto-submit/track/WebSocket/CI/demo | ✅ 완료 (3/3) |
 | 5. 명성 | README/demo/walkthrough/LICENSE | ✅ 완료 |
 | 재설계 | scanner 7개 분할(sqli/xss/idor/ssrf/auth/fuzz/cve) + login | ✅ 완료 |
-| **6. 알려진 취약점 커버리지** | **DVWA 13개 + Juice Shop 20+개 알려진 취약점 모두 자동 발견** | 🔄 **진행 중** |
-| **7. 일반화 (범용성)** | 벤치마크 전용 코드 제거, **알지 못하는 웹**에서도 동작 (새 벤치마크: WebGoat/bWAPP/Mutillidae) | ⬜ 대기 |
-| **8. 실전 (HackerOne)** | **처음 보는 실제 HackerOne 프로그램**에서 자동 스캔→triage→제출(반자동) — **North Star** | ⬜ 대기 |
+| **6. 알려진 취약점 커버리지** | **DVWA 13개 + Juice Shop 20+개 알려진 취약점 모두 자동 발견** | ✅ 완료 |
+| **7. 일반화 (범용성)** | 벤치마크 전용 코드 제거, **알지 못하는 웹**에서도 동작 (새 벤치마크: WebGoat/bWAPP/Mutillidae) | ✅ 완료 |
+| **8. LLM scanner 보완** | POST body 강화, multi-step(로그인→protected), bWAPP/WebGoat 실측 | ✅ 완료 |
+| **9. 실전 (HackerOne)** | **처음 보는 실제 HackerOne 프로그램**에서 자동 스캔→triage→제출(반자동) — **North Star** | ⬜ 대기 (API 키 필요) |
 
 ### 단계 6 — 블록 (서브단계)
 
@@ -51,7 +52,27 @@
 
 ---
 
-## 3. 완료된 블록: 7 (일반화) — 결과 (2026-11-14)
+## 3. 완료된 블록: 8 (LLM scanner 보완) — 결과 (2026-11-14)
+
+**방향**: LLM scanner가 POST body를 만들어 보내고, 로그인 후 protected page도 보는 multi-step 플로우.
+
+**결과**:
+- **8a crawl 강화**: `crawl.py`에 robots.txt 파싱 + JS 번들/인라인 스크립트에서 라우트(`/lessons/`, `/vuln/`, `/admin/`, `/api/`) 추출. WebGoat는 lesson 목록이 JS 동적 로드라 정적 crawl 한계(3개 엔드포인트). bWAPP는 DB 미초기화(`Unknown database 'bWAPP'`)로 정상 동작 불가.
+- **8b POST body 강화**: `crawl.py` 폼 필드에 `name`+`type`(text, password, email, number, submit) 추출. `PLAN_PROMPT`에 "Form fields (name: type)" 전달, form/JSON body 생성 지시, `content_type` 필드 추가. `_execute_test`에 `Content-Type: application/json` / `application/x-www-form-urlencoded` 처리. DVWA sqli: LLM이 `id: text`, `Submit: submit` 필드 구조를 보고 `id=1 OR 1=1&Submit=Submit` POST body 생성 → 2 findings(llm_sqli, llm_xss).
+- **8c multi-step**: `PLAN_PROMPT`에 `steps` 필드 추가(login→get/post). `_execute_steps` 함수: 각 step을 순서대로 실행, 마지막 step의 결과 반환. DVWA: login(POST) → sqli page(GET) → 200 + "SQL" 검증.
+- **8d bWAPP+WebGoat 실측 (Mock LLM)**:
+  - bWAPP: 18 endpoints, static 0, LLM 16 (llm_sqli 8 + llm_xss 8)
+  - WebGoat: 3 endpoints, static 11 (fuzz_anomaly 8 + xss 3), LLM 6 (llm_sqli 3 + llm_xss 3)
+  - **xss.py 버그 수정**: 8b에서 폼 필드를 string→dict로 바꿨는데 `scan_stored_xss`가 string을 기대 → dict 필드를 name 리스트로 변환하도록 수정.
+- **8e 문서 갱신 + push**: 이 섹션 + VULN_REPORT 갱신.
+
+**한계**: bWAPP DB 미초기화(이미지 설정 문제), WebGoat는 SPA라 정적 crawl 한계. Mock LLM이라 실제 LLM 판정 아님.
+
+**새/수정 파일**: `scanner/llm.py`(POST body + multi-step), `asset/crawl.py`(필드 name+type, robots.txt, JS 라우트), `scanner/xss.py`(dict 필드 수정).
+
+---
+
+## 4. 완료된 블록: 7 (일반화) — 결과 (2026-11-14)
 
 **방향 전환**: 정적 scanner(패턴 매칭)가 주력 → **LLM이 스캐너 그 자체**. LLM이 페이지를 이해해 맥락에 맞는 공격을 계획·실행·판정.
 
