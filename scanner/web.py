@@ -6,7 +6,7 @@ import httpx
 from core.models import Asset, Finding
 from core.logger import get_logger
 from scanner.sqli import scan_sqli
-from scanner.xss import scan_xss
+from scanner.xss import scan_xss, scan_dom_xss, scan_stored_xss
 from scanner.idor import scan_idor
 from scanner.ssrf import scan_ssrf
 from scanner.auth import scan_auth_bypass
@@ -35,10 +35,14 @@ def scan_web(asset: Asset, client: httpx.Client | None = None) -> list[Finding]:
         # 각 scanner 실행
         findings.extend(scan_sqli(asset, endpoint, client))
         findings.extend(scan_xss(asset, endpoint, client))
+        findings.extend(scan_stored_xss(asset, endpoint, client))
         findings.extend(scan_idor(asset, endpoint, client))
         findings.extend(scan_ssrf(asset, endpoint, client))
         findings.extend(scan_auth_bypass(asset, endpoint, client))
         findings.extend(scan_fuzz(asset, endpoint, client))
+
+    # DOM XSS (asset 단위: JS 번들 분석)
+    findings.extend(scan_dom_xss(asset, client))
 
     # CVE 스캔 (endpoint 없이 asset 단위)
     findings.extend(scan_cve(asset, client))

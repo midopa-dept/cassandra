@@ -149,10 +149,20 @@ def _extract_endpoint(url: str, resp: httpx.Response, forms: list[str]) -> Optio
         action = re.search(r'action=["\']([^"\'#]+)["\']', form)
         method = re.search(r'method=["\']([^"\'#]+)["\']', form, re.IGNORECASE)
         inputs = re.findall(r'<input[^>]*name=["\']([^"\'#]+)["\']', form)
+        # textarea도 필드로 포함 (DVWA xss_s mtxMessage 등)
+        textareas = re.findall(r'<textarea[^>]*name=["\']([^"\'#]+)["\']', form)
+        inputs = inputs + textareas
         if action:
             ep.forms.append({
                 "action": action.group(1),
                 "method": method.group(1).upper() if method else "GET",
+                "fields": inputs,
+            })
+        elif inputs:
+            # action 없는 폼: 같은 페이지에 POST (DVWA 등)
+            ep.forms.append({
+                "action": "",
+                "method": method.group(1).upper() if method else "POST",
                 "fields": inputs,
             })
 

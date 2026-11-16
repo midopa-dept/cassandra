@@ -1,8 +1,8 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-12
-**현재 단계**: **단계 6 (알려진 취약점 커버리지)** — **6a(API/NoSQL) 완료** → **6b(XSS 확장) 대기**
-**현재 블록**: 6b — DOM XSS, Stored XSS(DVWA)
+**현재 단계**: **단계 6 (알려진 취약점 커버리지)** — **6a(API/NoSQL) + 6b(XSS 확장) 완료** → **6c(파일/업로드) 대기**
+**현재 블록**: 6c — File Upload, File Download
 
 ---
 
@@ -42,7 +42,7 @@
 | 블록 | 추가 취약점 | 일반화 방식 | 상태 |
 |------|-----------|-----------|------|
 | **6a. API/NoSQL** | NoSQLi login, Admin Registration, Login Admin | OpenAPI/Swagger 자동 탐지 → endpoint·method·body schema 자동 추출. NoSQL operator(`$ne`/`$gt`/`$regex`) + 200/201 판별 | ✅ **완료** (nosqli + admin_registration + openapi_exposed) |
-| **6b. XSS 확장** | DOM XSS, Stored XSS(DVWA) | DOM: JS 번들에서 `innerHTML`/`document.write`/`location.hash` sink 탐지. Stored: body에 XSS payload → GET 반사 확인 | ⬜ |
+| **6b. XSS 확장** | DOM XSS, Stored XSS(DVWA) | DOM: JS 번들에서 `innerHTML`/`document.write`/`location.hash` sink 탐지. Stored: body에 XSS payload → GET 반사 확인 | ✅ **완료** (dom_xss + stored_xss) |
 | **6c. 파일/업로드** | File Upload, File Download | multipart POST + 확장자/Content-Type 변형, path traversal(`../`) | ⬜ |
 | **6d. 인증/세션** | Weak Session, CAPTCHA, Password Reset | cookie entropy/만료 분석, CAPTCHA OCR+우회, reset token 예측/재사용 | ⬜ |
 | **6e. 로직/인프라** | Race Condition, Payment Bypass, DNS/TLS | 동시 요청+결과 대조, 가격/수량 변형, DNS misconfig/TLS weak cipher/subdomain takeover | ⬜ |
@@ -51,31 +51,28 @@
 
 ---
 
-## 3. 완료된 블록: 6a (API/NoSQL) — 결과 (2026-11-12)
+## 3. 완료된 블록: 6b (XSS 확장) — 결과 (2026-11-12)
 
-**목표**: Juice Shop의 NoSQLi login, Admin Registration, OpenAPI 탐지를 자동 발견.
+**목표**: DOM XSS, Stored XSS(DVWA) 자동 발견.
 
 **결과**:
-- **NoSQLi login**: ✅ `/rest/user/login`(단수)에 `{$ne:None}` → **500** (baseline 401). operator가 백엔드 `btoa()`에 도달 → NoSQLi 공격면 존재. `vuln_type="nosqli"`로 자동 탐지.
-- **Admin Registration**: ✅ `POST /api/Users`에 `role:admin` → **201** + 응답 `"role":"admin"`. `vuln_type="admin_registration"`로 자동 탐지.
-- **OpenAPI 탐지**: ✅ `scan_openapi` 추가 (Content-Type=json + openapi/swagger 키 확인, SPA HTML 폴백 제거). 이 Juice Shop은 공개 스펙을 안 서빙(`/openapi.json`은 HTML) — 오탐 없음.
-- **Juice Shop findings**: 11 → **21** (nosqli 1, admin_registration 1, xss 2, api_missing_auth 3, api_no_rate_limit 3, fuzz_anomaly 11)
-- **TOTAL**: 51 → **61** (DVWA 40 + Juice Shop 21)
-- **발견률**: Juice Shop ~10% → **~20%** (4/20+)
+- **DOM XSS**: ✅ Juice Shop `main.js`에서 `innerHTML/outerHTML/document.write` sink + `location.href/document.location` source — 정적 분석으로 `dom_xss` finding 1개.
+- **Stored XSS (DVWA)**: ✅ `xss_s` 페이지 `txtName` + `mtxMessage` 필드에 payload POST → GET에서 인코딩 없이 반사 — `stored_xss` finding 2개 (high).
+- **DVWA findings**: 40 → **42** (stored_xss 2)
+- **Juice Shop findings**: 21 → **22** (dom_xss 1)
+- **TOTAL**: 61 → **64** (DVWA 42 + Juice Shop 22)
+- **발견률**: DVWA **~7/13**, Juice Shop **~5/20+**
 
-**구현** (`scanner/api.py`):
-- `scan_nosqli(base_url)` — common login 경로 probe + operator object 주입 + baseline status 비교
-- `scan_admin_registration(base_url)` — common register 경로 probe + role:admin 주입 + 201/200 + role 확인
-- `scan_openapi(base_url)` — common spec 경로 probe + Content-Type=json + openapi/swagger 키
-- `scan_api(asset)` — 위 3개 + 기존 REST/GraphQL (Endpoint 객체 지원)
+**구현** (`scanner/xss.py`):
+- `scan_dom_xss(asset, client)` — HTML에서 JS 번들 URL 추출 → sink(innerHTML, document.write, eval 등) + source(location.hash, document.URL 등) 정적 분석. inline script도 포함.
+- `scan_stored_xss(asset, endpoint, client)` — 폼 필드에 XSS payload POST → 같은 페이지 GET에서 payload가 인코딩 없이 반사되는지 확인. textarea 필드 포함.
+- `asset/crawl.py` — action 없는 폼(같은 페이지 POST)도 `ep.forms`에 포함 + textarea 필드 추출 (DVWA xss_s 대응)
 
 **알고 있는 것 (실측, 2026-11-12)**:
-- Juice Shop **v20.2.0** — **login endpoint: `/rest/user/login`** (단수, JS 번들 분석으로 확인). body: `{email, password: btoa(email 역순)}`
-- `POST /api/Users` → **201** (role:admin 허용)
-- `/openapi.json`·`/swagger.json` → 200 **HTML** (SPA 폴백, 실제 스펙 아님). `/b2b/v2/swagger.json` → 401 (존재, 인증 필요)
-- NoSQLi: v20.2.0은 password를 `btoa()`해서 operator가 TypeError(500) — 완전 우회(200)는 아님, **신호(500 vs 401)로 탐지**
+- DVWA `xss_s` 폼: `action` 속성 없음(같은 페이지 POST), 필드 `txtName` + `mtxMessage`(textarea) + `btnSign`. payload 저장 → GET 반사 확인.
+- Juice Shop `main.js`: `innerHTML`/`outerHTML`/`document.write` sink + `location.href`/`document.location` source — DOM XSS 공격면.
 
-**다음 블록: 6b (XSS 확장)** — DOM XSS, Stored XSS(DVWA)
+**다음 블록: 6c (파일/업로드)** — File Upload, File Download, path traversal
 
 **완료 기준**: Juice Shop findings에 `nosql`(login 우회) + admin registration 관련 finding 등장. VULN_REPORT 발견률 상승 확인.
 
@@ -93,8 +90,8 @@
 **실전 테스트 결과 (현재)**:
 | 앱 | findings | 내용 |
 |----|----------|------|
-| DVWA | **40** | sqli 10, xss 19, idor 8, cve 3 |
-| Juice Shop | **21** | nosqli 1, admin_registration 1, xss 2, api_missing_auth 3, api_no_rate_limit 3, fuzz_anomaly 11 |
+| DVWA | **42** | sqli 10, xss 19, stored_xss 2, idor 8, cve 3 |
+| Juice Shop | **22** | nosqli 1, admin_registration 1, dom_xss 1, xss 2, api_missing_auth 3, api_no_rate_limit 3, fuzz_anomaly 11 |
 
 **해결한 것**:
 1. **DVWA sqli/xss 0 findings** — sqli/xss/idor가 폼의 다른 필드(`Submit`)를 안 보내 DVWA 쿼리 미실행 + `scan_web` 비인증 클라이언트 → **완전 폼 전송** + **인증 클라이언트 전달**으로 해결
@@ -102,9 +99,9 @@
 3. **DVWA 로그인 비결정성** — admin DB 비밀번호가 빈 문자열(`md5('')`) → 로그인 실패 → DB reset 미트리거(치icken-and-egg) → **로그인 실패 시 DB reset + 재로그인 폴백**으로 해결
 
 **취약점 분석** (`docs/VULN_REPORT.md`):
-- **exploit 실측 11개**: DVWA 7 (boolean/time/length SQLi, IDOR, XSS, LFI, 명령 주입) + Juice Shop 4 (Stored XSS, IDOR, **NoSQLi login**, **Admin Registration**)
+- **exploit 실측 13개**: DVWA 9 (boolean/time/length SQLi, IDOR, XSS, **Stored XSS×2**, LFI, 명령 주입) + Juice Shop 4 (Stored XSS, IDOR, NoSQLi login, Admin Registration) + **DOM XSS (정적 분석)**
 - **모두 알려진 취약점** (새로운 것이 아님 — 의도적으로 취약한 학습용 앱)
-- **발견률**: DVWA ~54% (7/13), Juice Shop **~20%** (4/20) → **단계 6b~6e 목표**
+- **발견률**: DVWA **~54%** (7/13), Juice Shop **~25%** (5/20) → **단계 6c~6e 목표**
 
 ### 단계 1~5 + 재설계 (이전 세션)
 - 19개 mock 테스트 전부 통과
