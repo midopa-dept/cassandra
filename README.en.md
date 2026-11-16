@@ -1,118 +1,155 @@
+<p align="center"><img src="docs/logo.svg" width="112" alt="Cassandra"></p>
+
 # Cassandra
 
-**A black-box web vulnerability finder that works the way a human would: observe → attempt → discover.**
+**A black-box web vulnerability finder.**
 
-Python-based. It does not assume you know the target's credentials. It starts from what the target *itself* reveals (forms, API endpoints in JS bundles, error messages, hints in pages), then attempts to get in through paths that don't require prior knowledge — self-registration, password reset, SQLi login bypass, IDOR — and finally verifies each finding by reproducing it.
+Cassandra does not make decisions on its own. It is designed as a **toolset for an LLM coding agent**. When the agent calls `python -m core.main <command>` via `run_shell`, Cassandra sends and receives HTTP traffic and returns the result as **JSON**. It reports *observations* only — "there is a form here", "putting `'` in this parameter raises an error", "this API returns 200 with no token". The *judgment* — *"not knowing the credentials, what path opens it? registration? SQLi login bypass? IDOR?"* — is made by the brain, i.e. the **LLM agent**.
 
 ---
 
 ## Results (2026-11-16)
 
-**Re-discovered vulnerabilities across 4 benchmarks using the "observe → attempt → discover" loop.** No credentials were known in advance (black-box); entry was made only from what the tool observed (forms, APIs, errors).
+Measured results from running the **observe → judge → attempt → confirm** loop on four benchmarks, under the premise of **not knowing the credentials in advance (black-box)**:
 
-| Benchmark | Entry path (black-box) | Found & confirmed |
-|-----------|------------------------|-------------------|
-| **DVWA** | Unauthenticated scan → login-form **bruteforce** (dictionary) → `admin/password` | SQLi (UNION, extracted 5 credentials) · reflected XSS — verify **confirmed** |
-| **Juice Shop** | API endpoints extracted from JS bundle → **self-registration** (`/api/Users/`) | **IDOR**: a customer token reads `authentication-details/` and returns all 51 users (incl. admin) — verify **confirmed** |
-| **WebGoat** | Registration form → **self account creation** → traced RequireJS to lesson endpoints | Reflected XSS (`CrossSiteScripting/attack5a`) — verify **confirmed** |
-| **bWAPP** | setup → `install.php` → login-form hint ("bee/bug") **bruted** | **SQLi** (error-based, `sqli_1.php?title=`) · **reflected XSS** (`htmli_get.php?firstname=`) — verify **confirmed** |
+| Benchmark | Entry path found by the LLM (black-box) | Finding · confirmation |
+|-----------|----------------------------------------|------------------------|
+| **DVWA** | Unauth scan → login-form **bruteforce**(dictionary) → `admin/password` | **SQLi**(UNION, 5 credentials+MD5 extracted)·**XSS reflected** — verify **confirmed** |
+| **Juice Shop** | API endpoints extracted from JS bundle → **self-registration**(`/api/Users/`) | **IDOR**: customer token reads all 51 users (incl. admin) from `authentication-details/` — verify **confirmed** |
+| **WebGoat** | Registration form → **self-account** → traced RequireJS to lesson endpoint | **XSS reflected**(`CrossSiteScripting/attack5a`) — verify **confirmed** |
+| **bWAPP** | Login form leaks a hint("bee/bug") itself → **brute** | **SQLi**(error-based)·**XSS reflected** — verify **confirmed** |
 
-**Principle — no default credentials:** we do not search the web for "this app's default login" (that is reward hacking). Instead we (1) read only what the target **publicly exposes** (form hints, robots.txt, JS bundles, error messages) and (2) try a dictionary against the form and confirm by the target's **response** (redirect / status code).
-
-**Tool = senses, agent = judgment:** the scanner only reports **observations** — "there is a form here", "this parameter errors when injected", "this API returns 200 without a token". The attack plan ("what to do with that") is decided by the agent, and `exploit` / `verify` execute it and leave evidence.
+**Principle — No Default Credentials.** We do not do reward-hacking by web-searching "what are this app's default credentials?". Instead we (1) read only what the target **itself exposes**(form hints, robots.txt, JS bundles, error messages), and (2) throw a dictionary at it and confirm by **the target's reaction**(redirect / status code).
 
 ---
 
-## How it works
+## Architecture — Brain(LLM) + Senses(Cassandra)
 
-It automates the **observe → attempt → discover** loop a human uses to find a vulnerability, starting from the assumption that you do not know the credentials.
+The single most important thing to understand about Cassandra: **it is not "a bot that finds bugs on its own when you run it."** It separates a person's senses from their brain.
 
 ```
-① Observe (scan)        ② Judge (agent)         ③ Attempt (exploit)     ④ Verify
-"there is a form/API/  →  "paths that open    →  "SQLi login bypass?   →  "reproduce and
- error here"            without credentials:   extract creds DB?        capture before/after
-                       register? reset?       which payload?"          evidence;
-                       SQLi? IDOR?"                                reproduced=true/false"
+┌──────────────────────────────────────────────────────┐
+│                LLM coding agent  =  BRAIN             │
+│                                                        │
+│  · Reads the JSON(observations) Cassandra returns     │
+│  · Judges "what path opens without credentials?"      │
+│  · Decides which tool, with which payload, next       │
+│  · Final judgment: "this is / is not a vulnerability" │
+└───────────────────────────┬──────────────────────────┘
+                             │  run_shell:  python -m core.main <cmd>
+                             │  (tool call — typed by the LLM)
+┌───────────────────────────▼──────────────────────────┐
+│              Cassandra  =  senses + means             │
+│                                                        │
+│  scan       → unauth surface observation → JSON        │
+│  sqli       → injection probe(tech·cols·schema·creds) │
+│  sqli-login → login-form injection(bypass/extract)    │
+│  bruteforce → dictionary vs target's reaction         │
+│  exploit    → runs the payload the LLM specified      │
+│  verify     → reproduce + before/after(reproduced)    │
+└───────────────────────────┬──────────────────────────┘
+                             │  HTTP(S)
+┌───────────────────────────▼──────────────────────────┐
+│   Target web app (DVWA / Juice Shop / WebGoat / bWAPP)│
+└──────────────────────────────────────────────────────┘
 ```
 
-1. **Observe** — `scan` reports the unauthenticated surface (pages, forms, hidden fields, API endpoints inside JS bundles, headers, errors) and, after auth, the internals (modules, protected APIs). It **does not judge**.
-2. **Judge** — the agent reads the observations and picks an attack path, in this order: (a) what is open without auth (APIs, public data) → (b) create your own account (registration flow) → (c) password reset (token leak / prediction) → (d) login-form injection (SQLi login bypass, credential DB extraction) → (e) after auth (IDOR, privilege escalation).
-3. **Attempt** — `sqli` (auto probe: technique → columns → schema → data), `sqli-login` (inject into the login form), `bruteforce` (dictionary vs. the target's response), `exploit` (run a given instruction/payload).
-4. **Verify** — `verify` **reproduces** the finding and captures the before (normal) vs. after (vulnerable) response diff, returning `reproduced: true/false` and a `verdict_hint`. A human makes the final call.
+**Why split it this way.**
 
-These four stages live in `scanner/` (①), `exploit/` (③), `verify/` (④); shared data models, config and logging are in `core/`.
+- **Cassandra(senses) does not judge.** It fires HTTP, analyzes the returned bytes, and passes back *facts* as JSON. "This param is injectable=True", "this response contains `<script>alert(1)</script>`", "this API returns 401". If you put judgment in, it over-fits to one app and stops working on a new one.
+- **The LLM(brain) judges.** It reads Cassandra's JSON and does exactly the reasoning a human security professional does in their head: *"There's a login form but I don't know the credentials. Is there a registration flow? If not, SQLi login bypass, or pull the credential DB."* Then it executes that judgment as the next `run_shell` command.
+- **The human supervises.** They approve the LLM's judgment and Cassandra's evidence.
+
+This separation is what makes Cassandra **generalize**. It is not code tuned to DVWA; it is the structure of "a tool that reports observations well + a brain that judges", so it can run the same loop on a real website it has never seen.
+
+### Following one loop, concretely
+
+When a person tells the LLM agent *"find vulnerabilities on http://localhost:8081"*, this is what happens:
+
+```
+Human : find vulnerabilities on http://localhost:8081
+
+LLM   : [run_shell] python -m core.main scan http://localhost:8081 --max-pages 25
+Cassandra → { pages:[...], forms:[{action:/login.php, fields:[username,password,...]}], ... }
+
+LLM   : (judgment) A login form is visible. I don't know the credentials.
+        The page may give a hint, or I can brute with a dictionary.
+        [run_shell] python -m core.main bruteforce http://localhost:8081 \
+                     --login-url /login.php --max-attempts 200
+Cassandra → { success:true, username:"admin", password:"password", evidence:"redirect → index.php" }
+
+LLM   : (judgment) In as admin/password. Scan the interior for SQLi/XSS candidates.
+        [run_shell] python -m core.main sqli ".../sqli/?id=1" --login-user admin ...
+Cassandra → { verdict:"sql_injection", technique:"union", users:[{user:admin, password_md5:...}, ...] }
+
+LLM   : (judgment) Pulled the credential DB via UNION. Let me also confirm XSS.
+        [run_shell] python -m core.main verify ".../xss_r/?name=<script>..." \
+                     --expected "alert(1)" --baseline-url ".../xss_r/"
+Cassandra → { reproduced:true, verdict_hint:"confirmed", diff:"..." }
+
+LLM   : (final) Confirmed SQLi(UNION, 5 credentials) + XSS reflected. Report.
+```
+
+At every step **Cassandra reports facts only, the LLM judges only**. That is what "brain + senses" means.
 
 ---
 
-## Scanner — what it actually catches
+## Observe → Judge → Attempt → Confirm
 
-The **heart** of the project. Each module judges by **universal signals**, never by "this app is DVWA":
+The four stages that generalize the loop above.
 
-| Module | Catches |
-|--------|---------|
-| `sqli.py` | SQL injection (boolean / time-based blind / union / error) |
-| `xss.py` | Reflected XSS, **DOM XSS** (JS bundle sink+source), **Stored XSS** (store→reflect) |
-| `idor.py` | IDOR (access another user's resource by ID) |
-| `ssrf.py` | SSRF |
-| `auth.py` | Auth bypass (HTTP method override, etc.) |
-| `fuzz.py` | Anomaly detection (status-code change) |
-| `cve.py` | CVE matching (tech detection + NVD) |
-| `api.py` | REST API (auth, rate limit, body injection) |
-| `file.py` | File upload RCE, path traversal |
-| `session.py` | **Weak Session**, **Insecure CAPTCHA**, **Password Reset** |
-| `context.py` | API endpoint extraction from JS bundles (for SPAs) |
-| `login.py` | Login / session handling (DVWA, Juice Shop, etc.) |
-| `web.py` | **orchestrator** — calls all of the above |
+1. **Observe** (`scan`) — reports the unauth surface(pages, forms, hidden fields, API endpoints in JS bundles, headers, errors) and, after auth, the interior. **It does not judge.**
+2. **Judge** (LLM) — reads the observations and picks an attack path. Order: (a) what is open unauthenticated → (b) create your own account(registration) → (c) password reset(token leak/prediction) → (d) login-form injection(SQLi bypass, credential DB extraction) → (e) after auth(IDOR, privilege escalation).
+3. **Attempt** (`sqli` / `sqli-login` / `bruteforce` / `exploit`) — executes the path the LLM chose.
+4. **Confirm** (`verify`) — **reproduces** the finding and captures the before(normal) vs after(vulnerable) response diff, returning `reproduced: true/false`. The human makes the final call.
 
 ---
-
-## Install
-
-```bash
-# Python 3.11+ required
-uv sync
-```
-
-Copy `.env.example` to `.env` and fill in keys (`.env` is gitignored). `config.yaml` holds scan options, LLM provider, scheduler and dashboard port.
 
 ## Usage
 
-The CLI is `uv run python -m core.main <command>`.
+### With an LLM agent (primary use)
+
+Cassandra is intended as a **tool for an LLM coding agent**(stewart, Claude Code, etc.). The agent calls the CLI below via `run_shell` and reads the JSON output to make the next judgment.
 
 ```bash
-# ① Observe — unauthenticated surface (pages, forms, JS APIs, headers, errors)
-uv run python -m core.main scan http://localhost:8081 --max-pages 25
+# ① Observe — unauth surface(pages·forms·JS API·headers·errors)
+python -m core.main scan http://localhost:8081 --max-pages 25
 
-#    Also see the authenticated interior (only with credentials the target reveals)
-uv run python -m core.main scan http://localhost:8081 \
+#    To see the interior too, add login options (only credentials the target exposes)
+python -m core.main scan http://localhost:8081 \
     --login-url /login.php --login-user admin --login-pass password
 
-# ③ Attempt — automatic SQLi probe (technique, columns, schema, credential DB)
-uv run python -m core.main sqli "http://localhost:8081/vulnerabilities/sqli/?id=1" \
+# ③ Attempt
+#    Automatic SQLi probe (technique·columns·schema·credential DB)
+python -m core.main sqli "http://localhost:8081/vulnerabilities/sqli/?id=1" \
     --login-url /login.php --login-user admin --login-pass password
 
-#    SQLi on the login form (bypass / extract without knowing credentials)
-uv run python -m core.main sqli-login http://localhost:8081 --login-url /login.php
+#    Login-form SQLi (bypass/extract without credentials)
+python -m core.main sqli-login http://localhost:8081 --login-url /login.php
 
-#    Login bruteforce (dictionary vs. the target's response)
-uv run python -m core.main bruteforce http://localhost:8082 \
+#    Login bruteforce (dictionary vs the target's reaction)
+python -m core.main bruteforce http://localhost:8082 \
     --login-url /login.php --user-field login --pass-field password --max-attempts 200
 
-#    Run an exploit instruction (POST body, custom headers)
-uv run python -m core.main exploit "http://localhost:8082/htmli_get.php?firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E" \
+#    Run the payload the LLM specified (POST body·custom headers)
+python -m core.main exploit "http://localhost:8082/htmli_get.php?firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E" \
     -i "XSS reflected in firstname" --expected "alert(1)"
 
-# ④ Verify — reproduce + before/after evidence
-uv run python -m core.main verify "http://localhost:8082/sqli_1.php?title=a%27&action=search" \
-    -i "SQLi error-based: single quote breaks the query" \
+# ④ Confirm — reproduce + before/after evidence
+python -m core.main verify "http://localhost:8082/sqli_1.php?title=a%27&action=search" \
+    -i "SQLi error-based: single quote breaks query" \
     --expected "You have an error in your SQL" \
     --baseline-url "http://localhost:8082/sqli_1.php?title=a&action=search" \
     --login-url /login.php --login-user bee --login-pass bug
 ```
 
-Every command prints JSON, so it pipes cleanly into `jq`.
+Every command returns **JSON** on stdout. The LLM can read it directly, and a human can pipe it through `| jq`.
 
-## Running the benchmarks
+### By hand (demo / debugging)
+
+You can run every command directly, without an agent. Just type the commands above into a terminal.
+
+### Bringing up the benchmarks
 
 ```bash
 cd demo && docker compose up -d
@@ -120,7 +157,50 @@ cd demo && docker compose up -d
 # bWAPP: http://localhost:8082  WebGoat: http://localhost:8083/WebGoat
 ```
 
-bWAPP needs its database installed on first use: hit `/install.php?install=yes`.
+bWAPP needs its DB installed on first visit via `/install.php?install=yes`.
+
+---
+
+## Installation
+
+```bash
+# Requires Python 3.11+
+uv sync
+
+# Playwright (optional, screenshots)
+uv run playwright install chromium
+
+# Nuclei (optional)
+brew install nuclei   # or https://nuclei.projectdiscovery.io/
+```
+
+Copy `.env.example` to `.env` and fill in API keys (`.env` is gitignored). Set scan options·LLM·scheduler·dashboard port in `config.yaml`.
+
+---
+
+## Scanner modules — what they observe
+
+`scanner/` are the concrete sensors of the ① observe stage. Each module discriminates by **universal signals**(no hard-coded app names).
+
+| Module | Observes |
+|--------|----------|
+| `sqli.py` | SQL injection (boolean / time-based blind / union / error) |
+| `xss.py` | Reflected XSS, **DOM XSS**(JS bundle sink+source), **Stored XSS**(stored→reflected) |
+| `idor.py` | IDOR (access with another user's ID) |
+| `ssrf.py` | SSRF |
+| `auth.py` | Auth bypass (HTTP method override, etc.) |
+| `fuzz.py` | Anomaly detection (status-code change) |
+| `cve.py` | CVE matching (tech detection + NVD) |
+| `api.py` | REST API (auth, rate limit, body injection) |
+| `file.py` | File upload RCE, path traversal |
+| `session.py` | **Weak Session**, **Insecure CAPTCHA**, **Password Reset** |
+| `context.py` | Extract API endpoints from JS bundles (for SPAs) |
+| `login.py` | Login / session handling |
+| `web.py` | **orchestrator** — calls all of the above |
+
+Example: `session.py`'s **Weak Session** repeatedly requests an endpoint, collects the Set-Cookie values, and reports "predictable session" if the cookie is *reissued every time, sequentially numbered(1,2,3,4), low-entropy*. It does not hard-code a cookie name.
+
+---
 
 ## Structure
 
@@ -129,15 +209,32 @@ cassandra/
 ├── core/          # models, config, db, scheduler, logger, main (CLI)
 ├── scanner/       # ① observe: sqli, xss, idor, ssrf, auth, fuzz, cve, api,
 │                  #   file, session, infra, logic, nuclei, login, context + web.py
-├── exploit/       # ③ attempt: executor (sqli_probe, sqli_login_probe), bruteforce, poc
-├── verify/        # ④ verify: evidence (reproduce + before/after)
+├── exploit/       # ③ attempt: executor(sqli_probe, sqli_login_probe), bruteforce, poc
+├── verify/        # ④ confirm: evidence (reproduce + before/after)
 ├── asset/         # asset discovery (CT, DNS, API crawl, CVE, rescan, scope)
 ├── triage/        # LLM (judge, severity, report, PoC), dedup
 ├── web/           # dashboard
 ├── demo/          # docker-compose (DVWA + Juice Shop + bWAPP + WebGoat)
 ├── tests/         # integration tests
-└── docs/          # VULN_REPORT, walkthrough
+└── docs/          # logo, VULN_REPORT, walkthrough, agent_prompts
 ```
+
+## Tests
+
+```bash
+python tests/test_mvp.py      # MVP
+python tests/test_asset.py    # asset discovery
+python tests/test_stage3.py   # scanner expansion + daemon
+python tests/test_live.py     # DVWA + Juice Shop live
+```
+
+## Docs
+
+- [`docs/VULN_REPORT.md`](docs/VULN_REPORT.md) — what was actually found, exploit measurements, known-vulnerability comparison
+- [`docs/walkthrough.md`](docs/walkthrough.md) — code explanation ("why built this way")
+- [`docs/agent_prompts.md`](docs/agent_prompts.md) — prompts the LLM agent uses when calling Cassandra
+- [`PLAN.md`](PLAN.md) — full plan (North Star, stages)
+- [`HANDOFF.md`](HANDOFF.md) — current state · progress · next steps
 
 ## License
 
