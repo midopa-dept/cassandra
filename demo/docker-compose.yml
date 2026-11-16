@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # DVWA (Damn Vulnerable Web App)
+  dvwa:
+    image: docker.io/vulnerables/web-dvwa:latest
+    ports:
+      - "8081:80"
+    environment:
+      - DVWA_SECURITY=low
+    restart: unless-stopped
+
+  # Juice Shop (OWASP)
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  # BugBounty Bot
+  bugbounty:
+    build: .
+    ports:
+      - "8500:8500"
+    environment:
+      - H1_API_KEY=${H1_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./bugbounty.db:/app/bugbounty.db
+      - ./config.yaml:/app/config.yaml
+    depends_on:
+      - dvwa
+      - juice-shop
+    restart: unless-stopped

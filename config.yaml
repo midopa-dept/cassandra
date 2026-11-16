@@ -1,0 +1,40 @@
+# BugBounty Bot — 실전 테스트 설정 (DVWA + Juice Shop)
+
+hackerone:
+  api_key_env: H1_API_KEY
+  programs:
+    - "dvwa"
+    - "juice-shop"
+
+scan:
+  concurrency: 5
+  timeout: 10
+  user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  max_pages: 50
+  follow_redirects: true
+
+llm:
+  provider: mock  # mock (내가 판단), openai, anthropic
+  model: gpt-4o
+  temperature: 0.3
+  max_tokens: 2000
+
+scheduler:
+  ct_interval_hours: 1
+  dns_interval_hours: 6
+  rescan_interval_hours: 24
+  triage_interval_minutes: 1
+
+web:
+  host: 0.0.0.0
+  port: 8500
+  debug: true
+
+# 실전 테스트 대상
+targets:
+  - name: "DVWA"
+    url: "http://localhost:8081"
+    program: "dvwa"
+  - name: "Juice Shop"
+    url: "http://localhost:3000"
+    program: "juice-shop"
