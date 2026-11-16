@@ -62,6 +62,15 @@ def crawl(
 
             try:
                 resp = client.get(url)
+                # follow_redirects=False 인 인증 클라이언트에서 301/302 수동 추적
+                hops = 0
+                while resp.status_code in (301, 302, 303, 307, 308) and hops < 5:
+                    loc = resp.headers.get("location", "")
+                    if not loc:
+                        break
+                    loc = urljoin(url, loc)
+                    resp = client.get(loc)
+                    hops += 1
             except Exception as e:
                 log.debug(f"Crawl error {url}: {e}")
                 continue
@@ -221,6 +230,32 @@ def crawl_api(base_url: str, client: Optional[httpx.Client] = None) -> list[Endp
                         except Exception:
                             pass
                     endpoints.append(ep)
+
+                    # For list endpoints, also probe individual item endpoints (e.g., /api/Products/1)
+                    if "json" in resp.headers.get("Content-Type", ""):
+                        try:
+                            data = resp.json()
+                            if isinstance(data, list) and data:
+                                # Try to find ID field
+                                id_field = None
+                                for key in ["id", "Id", "ID", "_id"]:
+                                    if isinstance(data[0], dict) and key in data[0]:
+                                        id_field = key
+                                        break
+                                if id_field:
+                                    first_id = data[0][id_field]
+                                    item_url = f"{url}/{first_id}"
+                                    item_resp = client.get(item_url, timeout=5)
+                                    if item_resp.status_code < 400:
+                                        item_ep = Endpoint(
+                                            url=item_url,
+                                            method="GET",
+                                            params=[id_field],  # Path parameter
+                                            discovered_by="api_crawl",
+                                        )
+                                        endpoints.append(item_ep)
+                        except Exception:
+                            pass
             except Exception:
                 pass
 

@@ -1,7 +1,7 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-11
-**현재 단계**: 실전 테스트 진행 중 — DVWA session 문제 분석 완료, 해결 방안 수립
+**현재 단계**: 실전 테스트 — DVWA 로그인 비결정성 해결 중 (재시도 로직 추가, 검증 대기)
 
 ## 완료된 작업
 
@@ -70,25 +70,43 @@ Docker/colima 기동 완료. DVWA(:8081) + Juice Shop(:3000) 컨테이너 Runnin
 - DVWA: 3 findings (CVE — Apache HTTP/2 rapid reset) — 실제 취약점 아님
 - Juice Shop: 0 findings
 
-**문제:**
-1. DVWA: 로그인 POST 302→setup.php (성공)인데, 그 cookie 로 `/vulnerabilities/sqli/` GET 시 302→login.php (미인증). **원인: DB 미초기화** — setup.php 에서 "Create/Reset Database" 를 안 누르면 session 이 유지 안 됨.
-2. Juice Shop: API endpoint 는 찾지만 params 가 비어서 scanner 가 payload 를 못 주입.
-
-**해결 방안:**
-1. DVWA: login 후 setup.php 로 가서 DB reset (POST `Reset=Reset` + `user_token`) → 그 다음 authenticated crawl
-2. Juice Shop: API endpoint 에 기본 params (`?id=1`, `?name=test`) 주입해서 scanner 테스트
-
 **2차 테스트 결과 (DB reset 후):**
 - DVWA: login(302→setup.php) → setup.php GET(200) → DB reset POST(200, success) → `/` GET(302→login.php) → sqli GET(302→login.php)
 - **문제**: DB reset 성공 후에도 session 이 유지 안 됨. reset 후 `/` 로 가면 302→login.php.
 - **원인 (추측)**: DVWA 의 `session_regenerate_id()` 가 reset 시 호출되어 PHPSESSID 가 변경됨. reset 후 **다시 로그인**해야 함.
-- **해결**: reset 후 login.php 로 다시 로그인 (2단계 로그인) 또는 reset 후 setup.php 의 "Continue" 링크를 따라감.
 
-**Juice Shop:**
-- API endpoint 는 찾지만 params 가 비어서 scanner 가 payload 를 못 주입.
-- **해결**: API endpoint 에 기본 params (`?id=1`, `?name=test`) 주입해서 scanner 테스트.
+**3차 세션 (2026-11-11) — DVWA 로그인 플로우 완전 분석:**
 
-**Colima**: 종료 완료. 다음 테스트 시 `colima start` 후 `docker-compose up -d dvwa juice-shop`.
+1. **setup.php 버튼 이름**: `create_db` (value="Create / Reset Database"). 기존 `Reset=Reset` 은 DB 생성 실패. → `_dvwa_db_reset()` 수정 완료.
+
+2. **정상 플로우 (수동 검증 성공)**:
+   ```
+   GET /login.php (200, user_token)
+   → POST /login.php (302 → setup.php, DB 미생성 시)
+   → GET /setup.php (200, user_token)
+   → POST /setup.php create_db (302, DB 생성)
+   → GET /login.php (200, 새 user_token)
+   → POST /login.php (302 → index.php, 성공)
+   → GET / (200, /vulnerabilities/* 링크)
+   → GET /vulnerabilities/sqli/ (200, id= param)
+   ```
+
+3. **비결정성 (미해결)**: 같은 플로우가 때로는 302(성공), 때로는 200(실패). 수동 재현 4/4 성공, `get_authenticated_client()` 5/5 실패. 재시도 로직 추가(200 시 토큰 재추출+재POST, 최대 3회) — 추가됨, 검증 대기.
+
+4. **크롤러**: `crawl()` 에 301/302/303/307/308 수동 추적 추가 (인증 클라이언트 follow_redirects=False 대응).
+
+5. **Juice Shop**: `/api/Products/1`(대문자)=JSON, `/REST/products/1`(소문자)=SPA HTML. `crawl_api()` 는 `/api/*` 사용 — 정상. 리스트에서 첫 ID 추출 → 개별 endpoint + path param(`id`) 추가 완료.
+
+6. **sqli.py**: path parameter injection + URL encoding 추가.
+
+**수정된 파일 (3차, 미커밋):**
+- `scanner/login.py` — `create_db` 버튼, 재로그인, 재시도 로직, 불필요한 GET 제거
+- `asset/crawl.py` — 302 수동 추적, 개별 API endpoint + path param
+- `scanner/sqli.py` — path param injection
+
+**3차 테스트 결과:** DVWA 3 findings(CVE만, sqli 미크롤), Juice Shop 0 findings(11 endpoint, path param 주입됨). **목표 미달.**
+
+**Colima**: Running (다음 세션 stop 필요). **Git**: a7b003a push 완료, 3차 수정분 미커밋.
 
 ## 다음 단계
 
@@ -97,10 +115,15 @@ Docker/colima 기동 완료. DVWA(:8081) + Juice Shop(:3000) 컨테이너 Runnin
 3. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ ✓
 4. ~~`scanner/cve.py` (NVD + Wappalyzer)~~ ✓
 5. ~~`scanner/login.py` (DVWA 로그인)~~ ✓
-6. 실전 테스트: DVWA + Juice Shop 에서 실제 findings (진행 중)
-   - DVWA: DB 초기화 + authenticated crawl 수정 필요
-   - Juice Shop: API params 탐지 보완 필요
-7. HANDOFF.md 업데이트
+6. ~~DVWA setup.php `create_db` 버튼 수정 + 재로그인~~ ✓
+7. ~~Juice Shop API 개별 endpoint + path param~~ ✓
+8. **DVWA 로그인 비결정성 해결** — 재시도 로직이 200을 실제로 감지하는지 로그 확인. `find_login_form` 의 10개 404 GET 이 session 에 영향을 주는지 확인. 필요 시 `find_login_form` 을 DVWA 전용으로 단순화 (login.php 직접)
+9. **실전 테스트 재실행** — DVWA sqli/xss 페이지 크롤링 + findings 확인, Juice Shop findings 확인
+10. **범용성 보완** (장기 목표: 범용 해킹 툴)
+    - OpenAPI/Swagger 자동 탐지 (`/openapi.json`, `/swagger.json`)
+    - path parameter 일반화 (xss, ssrf, idor scanner)
+    - DB reset 일반화 (asset별 설정, DVWA 전용 코드 분리)
+11. HANDOFF.md 업데이트 + commit·push + colima stop
 
 ## 파일 목록
 
@@ -196,10 +219,10 @@ bugbounty/
 
 | 앱 | 상태 | 문제 |
 |----|------|------|
-| Juice Shop | `:3000` 200 OK | `/api/products` 만 200, scanner 0 findings — API params 미탐지 |
-| DVWA | `:8081` 302→login.php | 로그인 성공(302→setup.php)인데 DB 미초기화로 session 유지 안 됨 |
+| Juice Shop | `:3000` 200 OK | 11개 API endpoint 발견, path param 주입됨, 0 findings |
+| DVWA | `:8081` | 로그인 비결정성 (302/200) — sqli 페이지 미크롤, 3 findings(CVE만) |
 
-**원인**: DVWA 는 setup.php 에서 DB reset 을 해야 session 이 유지됨. Juice Shop 은 API endpoint 에 params 가 없어서 scanner 가 payload 를 못 주입.
+**원인**: DVWA 는 setup.php `create_db` 로 DB 생성 후 재로그인 필요. 로그인 POST 가 비결정적으로 200(실패) 반환. Juice Shop 은 API endpoint 발견 + path param 주입 완료, findings 0.
 
 ## 해결 방안
 
@@ -211,4 +234,8 @@ bugbounty/
 6. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ (완료)
 7. ~~`scanner/cve.py` — CVE 기반 (NVD + Wappalyzer)~~ (완료)
 8. ~~`scanner/login.py` — 인증 처리 (DVWA 등)~~ (완료)
-9. 실전 테스트: DVWA + Juice Shop 에서 실제 findings
+9. ~~DVWA setup.php `create_db` + 재로그인~~ (완료)
+10. ~~Juice Shop API 개별 endpoint + path param~~ (완료)
+11. DVWA 로그인 비결정성 해결 (진행 중)
+12. 실전 테스트: DVWA + Juice Shop 에서 실제 findings
+13. 범용성 보완 (OpenAPI 탐지, path param 일반화, DB reset 일반화)

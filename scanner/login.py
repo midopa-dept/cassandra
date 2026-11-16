@@ -98,6 +98,17 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
         log.warning("no login form found for %s", asset.base_url)
         return False
 
+    import re
+
+    def _fetch_token() -> str | None:
+        """로그인 폼에서 CSRF 토큰 재추출 (새 세션 대응)."""
+        try:
+            r = client.get(login_ep.url, timeout=10)
+            m = re.search(r"name='user_token'\s+value='([^']+)'", r.text)
+            return m.group(1) if m else None
+        except Exception:
+            return None
+
     try:
         # DVWA 스타일
         if "dvwa" in asset.base_url.lower():
@@ -106,20 +117,27 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
                 "password": credentials.get("pass", "password"),
                 "Login": "Login",
             }
-            # CSRF token 추출
-            resp = client.get(login_ep.url, timeout=10)
-            import re
-            m = re.search(r"name='user_token'\s+value='([^']+)'", resp.text)
-            if m:
-                data["user_token"] = m.group(1)
-                log.info("CSRF token: %s", m.group(1))
+            tok = _fetch_token()
+            if tok:
+                data["user_token"] = tok
+                log.info("CSRF token: %s", tok)
         else:
             data = {
                 "username": credentials.get("username", credentials.get("user", "admin")),
                 "password": credentials.get("password", credentials.get("pass", "password")),
             }
 
+        # POST 재시도: DVWA는 로그인 실패 시 200(폼 재표시), 성공 시 302.
+        # 토큰/세션 비결정성 대응으로 최대 3회 재시도.
         resp = client.post(login_ep.url, data=data, timeout=15)
+        attempts = 0
+        while resp.status_code == 200 and "dvwa" in asset.base_url.lower() and attempts < 3:
+            attempts += 1
+            log.info("login retry %d (200 = failed)", attempts)
+            tok = _fetch_token()
+            if tok:
+                data["user_token"] = tok
+            resp = client.post(login_ep.url, data=data, timeout=15)
 
         # 로그인 성공 확인
         if resp.status_code in (200, 302):
@@ -131,9 +149,19 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
                 if "login" not in location.lower():
                     log.info("login success (redirect): %s", location)
 
-                    # DVWA: setup.php 로 DB reset
+                    # DVWA: setup.php 로 DB reset + 재로그인
                     if "dvwa" in asset.base_url.lower():
-                        _dvwa_db_reset(client, asset)
+                        _dvwa_db_reset(client, asset, credentials)
+                        # 재로그인 완료 — 추가 GET 은 session 무효화 방지
+                        return True
+
+                    # 302 후 메인 페이지 GET (follow_redirects=False 대응)
+                    try:
+                        main_resp = client.get(location, timeout=10)
+                        if main_resp.status_code == 200:
+                            log.info("main page loaded: %d bytes", len(main_resp.text))
+                    except Exception:
+                        pass
 
                     return True
 
@@ -149,8 +177,12 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
         return False
 
 
-def _dvwa_db_reset(client: httpx.Client, asset: Asset) -> None:
-    """DVWA: setup.php 로 DB reset (session 유지 필요)."""
+def _dvwa_db_reset(client: httpx.Client, asset: Asset, credentials: dict | None = None) -> None:
+    """DVWA: setup.php 로 DB reset 후 재로그인 (session_regenerate_id 대응).
+
+    DVWA reset 시 session_regenerate_id() 가 호출되어 기존 PHPSESSID 가 무효화된다.
+    따라서 reset 후 login.php 로 2단계 로그인을 다시 수행해야 한다.
+    """
     import re
     try:
         setup_url = urljoin(asset.base_url, "/setup.php")
@@ -166,7 +198,7 @@ def _dvwa_db_reset(client: httpx.Client, asset: Asset) -> None:
             return
 
         data = {
-            "Reset": "Reset",
+            "create_db": "Create / Reset Database",
             "user_token": m.group(1),
         }
         resp = client.post(setup_url, data=data, timeout=30)
@@ -174,6 +206,33 @@ def _dvwa_db_reset(client: httpx.Client, asset: Asset) -> None:
             log.info("DVWA DB reset: %d", resp.status_code)
         else:
             log.warning("DVWA DB reset: %d", resp.status_code)
+            return
+
+        # reset 후 재로그인 (session_regenerate_id 대응)
+        log.info("DVWA: re-login after DB reset...")
+        if credentials is None:
+            credentials = DVWA_CREDENTIALS
+
+        login_url = urljoin(asset.base_url, "/login.php")
+        resp = client.get(login_url, timeout=10)
+        m = re.search(r"name='user_token'\s+value='([^']+)'", resp.text)
+        if m:
+            data["user_token"] = m.group(1)
+
+        login_data = {
+            "username": credentials.get("user", "admin"),
+            "password": credentials.get("pass", "password"),
+            "Login": "Login",
+        }
+        if m:
+            login_data["user_token"] = m.group(1)
+
+        resp = client.post(login_url, data=login_data, timeout=15)
+        if resp.status_code in (200, 302):
+            log.info("DVWA re-login after reset: %d", resp.status_code)
+        else:
+            log.warning("DVWA re-login after reset: %d", resp.status_code)
+
     except Exception as e:
         log.warning("DVWA DB reset failed: %s", e)
 
