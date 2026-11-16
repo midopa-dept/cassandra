@@ -6,6 +6,26 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 
 ---
 
+## 성과 요약 (2026-11-14)
+
+**4개 벤치마크에서 100개 findings, 20개 exploit 실측.**
+
+| 벤치마크 | static findings | LLM findings | exploit 실측 | 알려진 취약점 발견률 |
+|----------|:--------------:|:------------:|:-----------:|:------------------:|
+| **DVWA** | 45 | — | **12** | **~10/13 (~77%)** |
+| **Juice Shop** | 22 | — | **5** | **~5/20+ (~25%)** |
+| **bWAPP** | 0 | 16 | 0 (DB 미초기화) | LLM으로 보완 |
+| **WebGoat** | 11 | 6 | **3** | LLM으로 보완 |
+| **합계** | **78** | **22** | **20** | — |
+
+**16개 스캐너 모듈**이 보편적 신호로 판별: SQLi·XSS(reflected/DOM/stored)·IDOR·SSRF·인증우회·fuzz·CVE·REST API·파일업로드 RCE·Weak Session·Insecure CAPTCHA·NoSQLi·Admin Registration·Race Condition·DNS/TLS·**LLM 스캐너**.
+
+**LLM 스캐너**가 정적 스캐너의 한계를 보완: 페이지를 *이해*해 폼 필드 구조를 보고 **POST body를 만들어** 보낸다(8b), **로그인 후 protected page도** 본다(8c). POST-heavy·SPA 앱(bWAPP, WebGoat)에서 static이 못 잡는 것을 LLM이 잡는다.
+
+**다음: 9단계 — 실전 HackerOne** (North Star). *알지 못하는 실제* 프로그램에서 자동 스캔→triage→제출. API 키 필요.
+
+---
+
 ## 이것이 무엇인가
 
 버그바운티는 "타인의 웹사이트에서 버그를 찾아 신고하면 상금을 받는" 제도입니다. 이 봇은 그 과정을 자동화합니다.
@@ -88,6 +108,7 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 | **6d** 인증/세션 | **Weak Session, Insecure CAPTCHA**, Password Reset | DVWA에서 둘 다 실제 발견 |
 | **6e** 로직/인프라 | Race Condition, Payment Bypass, DNS/TLS | scanner 버그 수정 + 통합 (실전 도메인에서 동작) |
 | **7** 일반화 | **LLM scanner**, bWAPP + WebGoat 벤치마크 | LLM이 페이지를 이해해 공격 계획·실행·판정. 4개 벤치마크 검증 |
+| **8** LLM 보완 | **POST body**, **multi-step**(로그인→protected), bWAPP/WebGoat 실측 | bWAPP static 0→LLM 16, WebGoat static 11+LLM 6. xss.py dict 필드 수정 |
 
 **"발견률"이라는 측정 기준**이 있습니다. DVWA는 알려진 취약점 카테고리 ~13개, Juice Shop은 ~20+ 챌린지. 우리가 몇 개를 자동 발견했는지를 계속 재고 있습니다.
 
@@ -99,7 +120,7 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 | WebGoat | ~15+개 | **~3개** (XSS) | LLM scanner로 보완 |
 
 **다음 단계**:
-- **8** — 실전: *알지 못하는 실제* HackerOne 프로그램에서 자동 스캔→triage→제출 (**North Star**)
+- **9** — 실전: *알지 못하는 실제* HackerOne 프로그램에서 자동 스캔→triage→제출 (**North Star**, API 키 필요)
 
 ---
 
