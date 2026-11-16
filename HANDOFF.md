@@ -1,232 +1,140 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-11
-**현재 단계**: 실전 테스트 — **DVWA 40 + Juice Shop 11 = 51 findings**. **취약점 분석 보고서 작성 완료** (`docs/VULN_REPORT.md`: exploit 실측 9개, 알려진 취약점 대조, 발견률 DVWA ~54% / Juice Shop ~10%). 다음: Juice Shop NoSQLi login 경로 + DOM XSS 탐지
+**현재 단계**: **단계 6 (알려진 취약점 커버리지)** — 6a~6e 중 **6a(API/NoSQL) 시작 대기**
+**현재 블록**: 6a — OpenAPI/Swagger 자동 탐지 + NoSQLi login + Admin Registration
 
-## 완료된 작업
+---
 
-### MVP (단계 1) — 완료
-- `core/` — models, config, db, scheduler, logger, main
-- `scanner/web.py` — SQLi, XSS, IDOR (17줄 truncation)
-- `triage/llm.py` — LLM (judge, severity, report, PoC)
-- `triage/dedup.py` — 중복 제거
-- `hackerone/client.py` — GraphQL API
-- `web/app.py` + `dashboard.html` — Flask 대시보드
-- `tests/test_mvp.py` — 통합 테스트 (4/4 통과)
+## 1. 프로젝트 목표
 
-### 단계 2: asset/ — 완료
-- `asset/ct.py` — Certificate Transparency
-- `asset/dns.py` — DNS brute-force
-- `asset/api_crawl.py` — robots, sitemap, JS, OpenAPI
-- `asset/cve_match.py` — Wappalyzer + NVD
-- `asset/rescan.py` — 재스캔
-- `asset/scope.py` — HackerOne scope
-- `tests/test_asset.py` — 6/6 통과
+**최종 목표**: HackerOne 버그바운티에 버그를 자동으로 발견·리포트·제출해서 상금을 버는 실전 도구.
 
-### 단계 3: scanner/ 확장 — 완료
-- `scanner/infra.py` — TLS, subdomain takeover, S3/GCS
-- `scanner/api.py` — REST/GraphQL
-- `scanner/logic.py` — race condition, payment bypass
-- `scanner/nuclei.py` — Nuclei CLI
-- `triage/poc.py` — Playwright 스크린샷
-- `core/main.py` — daemon 모드
-- `tests/test_stage3.py` — 6/6 통과
+**핵심 방향 (2026-11-11 결정, PLAN.md에도 저장)**:
+- **과최적화 금지** — DVWA/Juice Shop에 맞춰 전용 코드를 만들지 않는다. 일반화 가능한 방식(payload/시그니처/로직)으로 고친다.
+- **점진적** — 한 번에 모든 취약점을 잡지 않는다. **한 번에 수행할 수 있는 블록** 단위로 나눠 단계적으로 추가한다.
+- **측정 기준** — 알려진 취약점 **발견률**: DVWA ~54% (7/13) → 100%, Juice Shop ~10% (2/20) → 100%. 매 블록 후 `docs/VULN_REPORT.md` 갱신.
 
-### 단계 4: 자동화 + 명성 — 완료
-- `hackerone/track.py` — triage 상태 추적
-- `hackerone/submit.py` — auto-submit
-- `web/app.py` — WebSocket
-- `README.md`, `LICENSE`, `docs/walkthrough.md`
-- `demo/docker-compose.yml`, `demo/demo.sh`
-- `.github/workflows/ci.yml`
-- `tests/test_stage4.py` — 3/3 통과
+---
 
-### 재설계 — 완료
-- `core/models.py` — `Asset.base_url` + `Endpoint` dataclass 추가 ✓
-- `asset/crawl.py` — 웹 크롤러 (224줄) ✓
-- `scanner/web.py` — orchestrator (39줄) ✓
-- `scanner/sqli.py` — SQLi scanner (110줄) ✓
-- `scanner/xss.py` — XSS scanner (81줄) ✓
-- `scanner/idor.py` — IDOR scanner (76줄) ✓
-- `scanner/ssrf.py` — SSRF scanner (92줄) ✓
-- `scanner/auth.py` — Auth bypass scanner (98줄) ✓
-- `scanner/fuzz.py` — Fuzzing/Anomaly scanner (144줄) ✓
-- `scanner/cve.py` — CVE scanner (121줄) ✓
-- `scanner/login.py` — Login/auth handler (148줄) ✓
+## 2. 단계 개요 (거시)
 
-## 현재 문제
+| 단계 | 내용 | 상태 |
+|------|------|------|
+| 1. MVP | core + scanner(SQLi/XSS/IDOR) + triage(LLM) + hackerone + 대시보드 | ✅ 완료 (4/4 테스트) |
+| 2. 자산 | CT/DNS/API crawl/CVE/rescan/scope | ✅ 완료 (6/6) |
+| 3. 확장 | infra/api/logic/nuclei/PoC(Playwright)/daemon | ✅ 완료 (6/6) |
+| 4. 자동화 | auto-submit/track/WebSocket/CI/demo | ✅ 완료 (3/3) |
+| 5. 명성 | README/demo/walkthrough/LICENSE | ✅ 완료 |
+| 재설계 | scanner 7개 분할(sqli/xss/idor/ssrf/auth/fuzz/cve) + login | ✅ 완료 |
+| **6. 알려진 취약점 커버리지** | **DVWA 13개 + Juice Shop 20+개 알려진 취약점 모두 자동 발견** | 🔄 **진행 중** |
 
-### scanner/web.py truncation — 해결됨
+### 단계 6 — 블록 (서브단계)
 
-`write_file` 로 14KB 파일 쓰려는데 17줄로 truncation.
+각 블록은 **한 번에 수행할 수 있는 단위**다. 순서대로 진행, 각 블록 후 VULN_REPORT 갱신 + 발견률 측정.
 
-**해결**: 파일 분할로 완료. `scanner/web.py` (39줄 orchestrator) + 7개 개별 scanner (sqli, xss, idor, ssrf, auth, fuzz, cve) + login.
+| 블록 | 추가 취약점 | 일반화 방식 | 상태 |
+|------|-----------|-----------|------|
+| **6a. API/NoSQL** | NoSQLi login, Admin Registration, Login Admin | OpenAPI/Swagger 자동 탐지 → endpoint·method·body schema 자동 추출. NoSQL operator(`$ne`/`$gt`/`$regex`) + 200/201 판별 | ⬜ **다음** |
+| **6b. XSS 확장** | DOM XSS, Stored XSS(DVWA) | DOM: JS 번들에서 `innerHTML`/`document.write`/`location.hash` sink 탐지. Stored: body에 XSS payload → GET 반사 확인 | ⬜ |
+| **6c. 파일/업로드** | File Upload, File Download | multipart POST + 확장자/Content-Type 변형, path traversal(`../`) | ⬜ |
+| **6d. 인증/세션** | Weak Session, CAPTCHA, Password Reset | cookie entropy/만료 분석, CAPTCHA OCR+우회, reset token 예측/재사용 | ⬜ |
+| **6e. 로직/인프라** | Race Condition, Payment Bypass, DNS/TLS | 동시 요청+결과 대조, 가격/수량 변형, DNS misconfig/TLS weak cipher/subdomain takeover | ⬜ |
 
-### 실전 테스트 — DVWA 실제 findings **40개** (5차 세션)
+**완료 기준**: DVWA 13/13, Juice Shop 20/20 (VULN_REPORT.md 측정).
 
-**진단 (5차, 실측):**
-- **DVWA sqli 0 findings 원인**: (1) sqli/xss/idor 스캐너가 **목표 파라미터만** 보내고 폼의 다른 필드(`Submit`)를 안 보냄 → DVWA는 `if(isset($_GET['Submit']))`이므로 **쿼리 미실행**. (2) boolean-based 임계값 `1.5x`가 너무 엄격 — 실제 차이는 약 6%. (3) `scan_web`이 **비인증 클라이언트**를 새로 만듦 → sqli 페이지가 1523바이트 단순화 페이지(비인증) 반환, `id` 미처리.
-- **실측**: `Submit=Submit` 포함 + `' OR '1'='1` → 4821바이트 (baseline 4538, +6%). 크롤러는 `params=['id','Submit']` 정확히 추출.
+---
 
-**수정:**
-1. `scanner/sqli.py` — **완전 폼 전송** (`_build_params`: target=payload, 나머지는 이름=버튼값), boolean 임계값 `1.5x→1.05x`
-2. `scanner/xss.py` — 완전 폼 전송 (target=payload, others=name)
-3. `scanner/idor.py` — 완전 폼 전송 (target=test_id, others=name)
-4. `scanner/web.py` — `scan_web(asset, client=None)`: **인증 클라이언트 전달 가능** (없으면 비인증 생성)
-5. `tests/test_live.py` — `scan_web(asset, client=auth_client)` 전달
+## 3. 현재 블록: 6a (API/NoSQL) — 세부
 
-**5차 테스트 결과:**
-- **DVWA: 40 findings** (이전 15) — **sqli 10** (sqli/ boolean + brute/ SQL error), **xss 19** (xss_r/ reflected), idor 8, cve 3. **실제 취약점 탐지 성공.**
-- **Juice Shop: 0 findings** — 크롤러가 실제 `/api/*`가 아닌 generic probe 경로(v1/v2/graphql/openapi.json) 발견. API 크롤링 갭.
+**목표**: Juice Shop의 NoSQLi login, Admin Registration, Login Admin을 자동 발견.
 
-### 실전 테스트 — Juice Shop findings + DVWA 비결정성 **완전 해결** (6차 세션)
+**알고 있는 것 (실측, 2026-11-11)**:
+- Juice Shop **v20.2.0** (bkimminich/juice-shop:latest) — API는 **`/api/*`** (구버전의 `/rest/*`가 아님)
+- `POST /api/users` → **201** (사용자 생성)
+- `POST /rest/login` → 500 "Unexpected path" — **실제 로그인 경로 미확인** (JS 번들 lazy-load chunk에 있음)
+- NoSQLi 신호: `{"$gt":""}` → 500 (현재 fuzz_anomaly 11개로 잡힘)
+- 알려진 NoSQLi login payload: `{"username": {"$ne": null}, "password": {"$ne": null}}` → 200 (로그인 우회)
+- Juice Shop 저장소에 `swagger.yml`(B2B API) + `SOLUTIONS.md`(모든 취약점) 있음
 
-**진단 (6차, 실측):**
-- **Juice Shop 0 findings 원인**: (1) `crawl_api`가 **Content-Type을 안 확인** → SPA(Angular)가 non-API 경로에도 `index.html`(200 HTML) 반환 → `/v1`, `/v2`, `/graphql`, `/openapi.json` 등 **9개 오탐**. (2) `ep.params`를 **JSON 응답 키**(`["status","data"]`)로 채움 — 실제 query param 아님. (3) **핵심**: Juice Shop의 취약점은 **POST/PUT JSON body**에 있는데, `scan_api`는 **GET query param만** 테스트. GET query(`?category=`, `?search=`)는 sanitize되어 SQLi/XSS 없음(실측: count 항상 46, 반사 없음).
-- **DVWA 로그인 비결정성 재발 원인**: admin의 **DB 비밀번호가 빈 문자열**(`md5('')=d41d8cd9...`)이 되어 있었음 → `md5('password')`와 안 맞아서 로그인 실패. **치icken-and-egg**: `_dvwa_db_reset`(수정 수단)는 로그인 **성공 후**에만 호출 → DB가 나쁘면 reset이 한 번도 트리거 안 됨.
+**할 일 (이 블록)**:
+1. **실제 로그인 경로 발견** — JS 번들 분석 또는 API probe (`/api/users/login` 등)
+2. **`scanner/api.py`**: NoSQLi operator payload 추가 (`$ne`/`$gt`/`$regex`/`$or`) + 200/201 성공 판별 → `vuln_type="nosql"` (fuzz_anomaly에서 승격)
+3. **OpenAPI/Swagger 자동 탐지** — `/openapi.json`, `/swagger.json` GET → endpoint·method·body schema 추출 → `crawl_api`에 통합
+4. **Admin Registration** — `POST /api/users`에 admin role/권한 필드 주입 → 201 + 권한 확인
+5. **검증** — `tests/test_live.py` 재실행 + `docs/VULN_REPORT.md` 갱신 (Juice Shop 발견률 재측정)
 
-**수정:**
-1. `asset/crawl.py` — **Content-Type 필터** (JSON만 endpoint, SPA HTML 오탐 제거) + `{"data":[...]}` 래퍼 처리로 **item endpoint 자동 발견** (`/api/Products/1`)
-2. `scanner/api.py` — **`scan_rest_body_injection` 추가**: POST/PUT JSON body로 XSS/SQLi/NoSQL payload 테스트 (201/200+반사, 500, SQL error). `scan_api`에 통합. `base_url`을 `asset.base_url` 우선 사용 (test_live 호환)
-3. `scanner/login.py` — **DVWA 로그인 실패 시 DB reset + 재로그인 폴백** (치icken-and-egg 해결)
+**완료 기준**: Juice Shop findings에 `nosql`(login 우회) + admin registration 관련 finding 등장. VULN_REPORT 발견률 상승 확인.
 
-**6차 테스트 결과:**
-- **DVWA: 40 findings** (sqli 10, xss 19, idor 8, cve 3) — 로그인 성공, 비결정성 완전 해결 (깨뜨린 DB도 자동 복구, 3/3)
-- **Juice Shop: 11 findings** (fuzz_anomaly — `{"$gt":""}`→500 NoSQL injection 신호) — 오탐 9개 제거, 실제 API 3개(Products, Products/1, Challenges) 발견
-- **TOTAL: 51 findings**
+**주의 (함정)**:
+- Juice Shop은 SPA(Angular) — non-API 경로에 `index.html`(200 HTML) 반환. Content-Type 필터 필수(기존 구현 있음).
+- DVWA는 MySQL, Juice Shop은 MongoDB. NoSQLi는 MongoDB 백엔드에만 해당.
+- 과최적화 금지: `/api/users` 같은 Juice Shop 전용 경로를 하드코딩하지 않는다. OpenAPI 탐지 + generic operator payload로 잡는다.
 
-**Colima**: Running (다음 세션 stop 필요). **Git**: 6차 수정분 커밋 예정.
+---
 
-## 다음 단계
+## 4. 진행 기록
 
-1. ~~`scanner/web.py` 를 6개로 분할 (sqli, xss, idor, ssrf, auth, fuzz)~~ ✓
-2. ~~각 파일 2~4KB 로 `write_file` 사용~~ ✓
-3. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ ✓
-4. ~~`scanner/cve.py` (NVD + Wappalyzer)~~ ✓
-5. ~~`scanner/login.py` (DVWA 로그인)~~ ✓
-6. ~~DVWA setup.php `create_db` 버튼 수정 + 재로그인~~ ✓
-7. ~~Juice Shop API 개별 endpoint + path param~~ ✓
-8. ~~**DVWA 로그인 비결정성 해결**~~ ✓ (4차: `Login` 버튼 누락 — `user_token` field로 DVWA 감지 + Location 헤더로 성공/실패 판별 + 재시도)
-9. ~~**실전 테스트 재실행**~~ ✓ (5차: DVWA 40 findings — sqli 10, xss 19, idor 8, cve 3)
-10. ~~**Juice Shop findings**~~ ✓ (6차: 11 findings — Content-Type 필터 + item endpoint 발견 + body injection 스캐너. DVWA 비결정성 완전 해결)
-11. **Juice Shop XSS/SQLi body 스캔 정밀화** — PUT /api/Products/1 body `name`이 저장·반사됨(실측) — XSS/SQLi 탐지. NoSQL injection(fuzz_anomaly)을 dedicated vuln_type로 승격
-12. **범용성 보완** (장기 목표: 범용 해킹 툴)
-    - ~~path parameter 일반화 (xss, ssrf, idor scanner)~~ ✓ (5차: 완전 폼 전송)
-    - OpenAPI/Swagger 자동 탐지 (`/openapi.json`, `/swagger.json`)
-    - DB reset 일반화 (asset별 설정, DVWA 전용 코드 분리)
-12. HANDOFF.md 업데이트 + commit·push + colima stop
+### 2026-11-11 (5~7차 세션) — 실전 테스트 + 분석
 
-## 파일 목록
+**실전 테스트 결과 (현재)**:
+| 앱 | findings | 내용 |
+|----|----------|------|
+| DVWA | **40** | sqli 10, xss 19, idor 8, cve 3 |
+| Juice Shop | **11** | fuzz_anomaly (NoSQL injection 신호) |
+
+**해결한 것**:
+1. **DVWA sqli/xss 0 findings** — sqli/xss/idor가 폼의 다른 필드(`Submit`)를 안 보내 DVWA 쿼리 미실행 + `scan_web` 비인증 클라이언트 → **완전 폼 전송** + **인증 클라이언트 전달**으로 해결
+2. **Juice Shop 0 findings** — SPA가 non-API 경로에도 HTML(200) 반환 → 오탐 9개 + body injection 미테스트 → **Content-Type 필터** + **item endpoint 발견** + **body injection 스캐너**로 해결
+3. **DVWA 로그인 비결정성** — admin DB 비밀번호가 빈 문자열(`md5('')`) → 로그인 실패 → DB reset 미트리거(치icken-and-egg) → **로그인 실패 시 DB reset + 재로그인 폴백**으로 해결
+
+**취약점 분석** (`docs/VULN_REPORT.md`):
+- **exploit 실측 9개**: DVWA 7 (boolean/time/length SQLi, IDOR, XSS, LFI, 명령 주입) + Juice Shop 2 (Stored XSS, IDOR)
+- **모두 알려진 취약점** (새로운 것이 아님 — 의도적으로 취약한 학습용 앱)
+- **발견률**: DVWA ~54% (7/13), Juice Shop ~10% (2/20) → **단계 6의 목표**
+
+### 단계 1~5 + 재설계 (이전 세션)
+- 19개 mock 테스트 전부 통과
+- scanner 7개 분할 + login (DVWA/Juice Shop)
+- 상세: git log 참고
+
+---
+
+## 5. 파일 구조
 
 ```
 bugbounty/
-├── PLAN.md
-├── HANDOFF.md
-├── README.md
-├── LICENSE
-├── pyproject.toml
-├── uv.lock
-├── .env
-├── .env.example
-├── config.yaml
-├── Dockerfile
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-├── core/
-│   ├── __init__.py
-│   ├── models.py       # Asset, Endpoint, Finding, Report, Submission
-│   ├── config.py
-│   ├── db.py
-│   ├── scheduler.py
-│   ├── logger.py
-│   └── main.py
-├── asset/
-│   ├── __init__.py
-│   ├── ct.py
-│   ├── dns.py
-│   ├── api_crawl.py
-│   ├── cve_match.py
-│   ├── rescan.py
-│   ├── scope.py
-│   └── crawl.py        # 웹 크롤러 (224줄)
-├── scanner/
-│   ├── __init__.py
-│   ├── web.py          # orchestrator (39줄)
-│   ├── infra.py
-│   ├── api.py
-│   ├── logic.py
-│   ├── nuclei.py
-│   ├── sqli.py         # SQLi scanner (110줄)
-│   ├── xss.py          # XSS scanner (81줄)
-│   ├── idor.py         # IDOR scanner (76줄)
-│   ├── ssrf.py         # SSRF scanner (92줄)
-│   ├── auth.py         # Auth bypass scanner (98줄)
-│   ├── fuzz.py         # Fuzzing/Anomaly scanner (144줄)
-│   ├── cve.py          # CVE scanner (121줄)
-│   └── login.py        # Login/auth handler (148줄)
-├── triage/
-│   ├── __init__.py
-│   ├── llm.py
-│   ├── dedup.py
-│   └── poc.py
-├── hackerone/
-│   ├── __init__.py
-│   ├── client.py
-│   ├── track.py
-│   └── submit.py
-├── web/
-│   ├── __init__.py
-│   ├── app.py
-│   ├── templates/
-│   │   └── dashboard.html
-│   └── static/
-│       ├── css/
-│       └── js/
-├── demo/
-│   ├── docker-compose.yml
-│   └── demo.sh
+├── PLAN.md            # 목표 + 아키텍처 + 단계 로드맵 (8.1: 단계 6 블록)
+├── HANDOFF.md         # 이 파일 — 진행 상황 + 현재 블록
+├── README.md, LICENSE, config.yaml, pyproject.toml, uv.lock
+├── core/              # models, config, db, scheduler, logger, main
+├── asset/             # ct, dns, crawl, cve_match, rescan, scope
+├── scanner/           # web(orchestrator), sqli, xss, idor, ssrf, auth, fuzz, cve, api, infra, logic, nuclei, login
+├── triage/            # llm, dedup, poc
+├── hackerone/         # client, track, submit
+├── web/               # app, templates, static
+├── demo/              # docker-compose.yml, demo.sh
 ├── docs/
-│   └── walkthrough.md
-└── tests/
-    ├── test_mvp.py
-    ├── test_asset.py
-    ├── test_stage3.py
-    └── test_stage4.py
+│   ├── walkthrough.md
+│   └── VULN_REPORT.md # 취약점 분석 (exploit 실측 + 발견률)
+└── tests/             # test_mvp, test_asset, test_stage3, test_stage4, test_live, test_dvwa_login
 ```
 
-## 테스트 결과
+## 6. 테스트
 
 | 테스트 | 내용 | 결과 |
 |--------|------|------|
-| test_mvp.py | scanner + triage + hackerone + web | ✓ 4/4 |
-| test_asset.py | CT + DNS + API + CVE + rescan + scope | ✓ 6/6 |
-| test_stage3.py | infra + api + logic + nuclei + poc + daemon | ✓ 6/6 |
-| test_stage4.py | track + submit + websocket | ✓ 3/3 |
+| test_mvp.py | scanner + triage + hackerone + web | ⚠️ `scan_web(rate_limit=)` 시그니처 불일치 (재설계 후 갱신 필요) |
+| test_asset.py | CT + DNS + API + CVE + rescan + scope | ✓ |
+| test_stage3.py | infra + api + logic + nuclei + poc + daemon | ✓ |
+| test_stage4.py | track + submit + websocket | ✓ |
+| test_live.py | **실전**: DVWA + Juice Shop (colima 필요) | ✓ 51 findings |
 
-**총 19개 테스트 모두 통과** (Mock 서버 기반)
+**실행**: `.venv/bin/python tests/test_live.py` (colima + docker 컨테이너 필요)
 
-## 실전 테스트
+## 7. 환경
 
-| 앱 | 상태 | 문제 |
-|----|------|------|
-| Juice Shop | `:3000` 200 OK | **11 findings** (fuzz_anomaly — NoSQL injection 신호) — 오탐 9개 제거, 실제 API 3개 발견 |
-| DVWA | `:8081` | **40 findings** (sqli 10, xss 19, idor 8, cve 3) — 비결정성 완전 해결 |
-
-**원인 (5~6차 확인)**: (5차) sqli/xss/idor가 폼의 다른 필드(`Submit`)를 안 보내 DVWA 쿼리 미실행 + `scan_web` 비인증 클라이언트 → 완전 폼 전송 + 인증 클라이언트 전달로 해결. (6차) Juice Shop: SPA가 non-API 경로에도 HTML(200) 반환 → Content-Type 필터 + item endpoint 발견 + body injection 스캐너. DVWA: admin DB 비밀번호가 빈 문자열 → 로그인 실패 시 DB reset + 재로그인 폴백.
-
-## 해결 방안
-
-1. `Asset` 에 `base_url` 필드 추가 (완료)
-2. `Endpoint` dataclass 추가 (완료)
-3. `asset/crawl.py` 로 endpoint 자동 수집 (완료)
-4. ~~`scanner/web.py` 를 6개로 분할~~ (완료)
-5. 각 scanner (sqli, xss, idor, ssrf, auth) 가 `base_url + endpoint + param` 으로 실제 HTTP 요청 (완료)
-6. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ (완료)
-7. ~~`scanner/cve.py` — CVE 기반 (NVD + Wappalyzer)~~ (완료)
-8. ~~`scanner/login.py` — 인증 처리 (DVWA 등)~~ (완료)
-9. ~~DVWA setup.php `create_db` + 재로그인~~ (완료)
-10. ~~Juice Shop API 개별 endpoint + path param~~ (완료)
-11. ~~DVWA 로그인 비결정성 해결~~ (4차 완료 — `Login` 버튼 누락 원인, `user_token` 감지 + Location 판별)
-12. ~~실전 테스트: DVWA + Juice Shop 실제 findings~~ ✓ (5~6차: DVWA 40 + Juice Shop 11 = 51 findings)
-13. 범용성 보완 (OpenAPI 탐지, path param 일반화, DB reset 일반화)
+- **colima**: Running — DVWA `:8081`, Juice Shop `:3000` (docker.sock: `/Users/midopa/.colima/default/docker.sock`)
+- **Python**: `.venv` (uv, 3.13) — `python3` 또는 `.venv/bin/python`
+- **DVWA**: MySQL (app/vulnerables), admin/password. 로그인 실패 시 자동 DB reset
+- **Juice Shop**: v20.2.0, MongoDB, API `/api/*`
