@@ -1,4 +1,4 @@
-"""BugBounty Bot — CVE 기반 스캐너 (NVD + Wappalyzer).
+"""Cassandra Bot — CVE 기반 스캐너 (NVD + Wappalyzer).
 
 tech_stack 에서 탐지된 기술의 알려진 CVE 매칭.
 """

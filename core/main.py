@@ -1,229 +1,161 @@
-"""BugBounty Bot — 메인 엔트리포인트 (daemon 모드)."""
+"""Cassandra — CLI 엔트리포인트.
+
+도구(감각기관) + 에이전트(뇌) 아키텍처:
+  - scanner: 관찰(HTML/폼/엔드포인트/헤더/에러) → 구조화 JSON
+  - exploit: 에이전트 지시대로 공격 실행 → 결과 캡처
+  - verify: 재현 + before/after 증거
+
+에이전트는 이 CLI를 호출하고, JSON 출력을 읽고 판단한다.
+"""
 import argparse
+import json
 import sys
-import time
-import signal
 from .config import Config
-from .db import DB
-from .logger import setup_logger
-from .scheduler import Scheduler
-from .models import Asset
-
-# Import modules
-from scanner.web import scan_web
-from scanner.infra import scan_infra
-from scanner.api import scan_api
-from scanner.logic import scan_logic
-from scanner.nuclei import scan_nuclei, is_available as nuclei_available
-from triage.llm import LLMClient, judge_finding, assess_severity, generate_report
-from triage.dedup import dedup_findings
-from asset.ct import discover_subdomains
-from asset.dns import discover_assets as dns_discover
-from asset.rescan import get_assets_due_for_rescan, mark_scanned
-from asset.scope import filter_in_scope
-
-
-class BugBountyBot:
-    """BugBounty Bot 메인 클래스."""
-
-    def __init__(self, config: Config):
-        self.config = config
-        self.db = DB(config.db_path)
-        self.scheduler = Scheduler()
-        self.llm = LLMClient(
-            provider=config.llm.provider,
-            model=config.llm.model,
-            api_key=config.llm.api_key,
-        )
-        self.log = setup_logger("bugbounty")
-
-    def start(self):
-        """봇 시작."""
-        self.log.info("BugBounty Bot starting")
-        self.scheduler.start()
-
-        # Register jobs
-        self.scheduler.add_job("ct_poll", self._ct_poll_job, self.config.scheduler.ct_min)
-        self.scheduler.add_job("dns_discover", self._dns_discover_job, self.config.scheduler.dns_min)
-        self.scheduler.add_job("rescan", self._rescan_job, self.config.scheduler.rescan_min)
-        self.scheduler.add_job("triage_check", self._triage_check_job, self.config.scheduler.triage_min)
-
-        self.log.info("BugBounty Bot started")
-
-    def stop(self):
-        """봇 종료."""
-        self.log.info("BugBounty Bot stopping")
-        self.scheduler.shutdown()
-
-    # ── Jobs ──────────────────────────────────────────────────────────
-
-    def _ct_poll_job(self):
-        """CT log 폴링: 새 서브도메인 발견."""
-        self.log.info("CT poll job")
-        for program in self.config.hackerone.programs:
-            try:
-                assets = discover_subdomains(program, program)
-                for asset in assets:
-                    self.db.save_asset(asset)
-                    self.log.info(f"New asset from CT: {asset.domain}")
-            except Exception as e:
-                self.log.error(f"CT poll error for {program}: {e}")
-
-    def _dns_discover_job(self):
-        """DNS brute-force: 새 자산 발견."""
-        self.log.info("DNS discover job")
-        for program in self.config.hackerone.programs:
-            try:
-                assets = dns_discover(program, program)
-                for asset in assets:
-                    self.db.save_asset(asset)
-                    self.log.info(f"New asset from DNS: {asset.domain}")
-            except Exception as e:
-                self.log.error(f"DNS discover error for {program}: {e}")
-
-    def _rescan_job(self):
-        """재스캔: 기존 자산 스캔."""
-        self.log.info("Rescan job")
-        due_assets = get_assets_due_for_rescan(self.db, interval_hours=24)
-
-        for asset in due_assets:
-            try:
-                self._scan_asset(asset)
-                mark_scanned(self.db, asset.id)
-            except Exception as e:
-                self.log.error(f"Rescan error for {asset.domain}: {e}")
-
-    def _triage_check_job(self):
-        """Triage check: HackerOne 리포트 상태 확인."""
-        self.log.info("Triage check job")
-        # TODO: Implement HackerOne triage tracking
-        pass
-
-    # ── Scan ──────────────────────────────────────────────────────────
-
-    def _scan_asset(self, asset: Asset):
-        """자산 스캔: web, infra, api, logic, nuclei."""
-        self.log.info(f"Scanning {asset.domain}")
-
-        findings = []
-
-        # Web scanner
-        if asset.endpoints:
-            findings.extend(scan_web(asset, rate_limit=self.config.scan.rate_limit))
-
-        # Infra scanner
-        findings.extend(scan_infra(asset))
-
-        # API scanner
-        if asset.endpoints:
-            findings.extend(scan_api(asset))
-
-        # Logic scanner
-        if asset.endpoints:
-            findings.extend(scan_logic(asset))
-
-        # Nuclei (if available)
-        if nuclei_available():
-            findings.extend(scan_nuclei(asset, templates=self.config.scan.nuclei_templates))
-
-        # Dedup
-        findings = dedup_findings(self.db, findings)
-
-        # Save findings
-        for finding in findings:
-            finding.asset_id = asset.id
-            self.db.save_finding(finding)
-            self.log.info(f"Finding: {finding.vuln_type} ({finding.severity}) on {asset.domain}")
-
-        # Triage (LLM)
-        for finding in findings:
-            self._triage_finding(finding, asset)
-
-    def _triage_finding(self, finding, asset: Asset):
-        """Triage: LLM 판단 + 리포트 생성."""
-        # Judge
-        result = judge_finding(self.llm, finding, asset)
-        if not result.get("is_real", True):
-            self.db.update_finding_status(finding.id, "false_positive")
-            return
-
-        # Severity
-        severity = assess_severity(self.llm, finding, asset)
-        finding.severity = severity
-        self.db.save_finding(finding)
-
-        # Report
-        report = generate_report(self.llm, finding, asset, severity)
-        self.db.save_report(report)
-        self.log.info(f"Report: {report.title} ({report.rating})")
-
-        # Auto-submit (if high/critical)
-        if self._should_auto_submit(report.rating):
-            self._submit_report(report)
-
-    def _should_auto_submit(self, rating: str) -> bool:
-        """Auto-submit: high/critical만."""
-        threshold = self.config.llm.auto_submit_min
-        order = {"low": 1, "medium": 2, "high": 3, "critical": 4}
-        return order.get(rating, 0) >= order.get(threshold, 3)
-
-    def _submit_report(self, report):
-        """HackerOne 제출."""
-        from hackerone.client import HackerOneClient
-
-        if not self.config.hackerone.api_key:
-            self.log.warning("No HackerOne API key, skipping submit")
-            return
-
-        try:
-            client = HackerOneClient(
-                self.config.hackerone.api_key,
-                session_id=self.config.hackerone.session_id,
-                csrf_token=self.config.hackerone.csrf_token,
-            )
-            report_id = client.create_report(report, report.program)
-            if report_id:
-                self.db.update_report_status(report.id, "submitted", hackerone_id=report_id)
-                self.log.info(f"Submitted: {report.title} (ID: {report_id})")
-            client.close()
-        except Exception as e:
-            self.log.error(f"Submit error: {e}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="BugBounty Bot")
-    parser.add_argument("--config", default="config.yaml", help="설정 파일 경로")
-    parser.add_argument("--db", default=None, help="SQLite 경로")
-    parser.add_argument("--once", action="store_true", help="한 번만 실행")
+    parser = argparse.ArgumentParser(prog="cassandra", description="Vulnerability scanner, exploit generator, verifier")
+    sub = parser.add_subparsers(dest="command")
+
+    # scan
+    p_scan = sub.add_parser("scan", help="Observe target: pages, forms, endpoints, headers, errors")
+    p_scan.add_argument("url", help="Target URL (http://...)")
+    p_scan.add_argument("--max-pages", type=int, default=None, help="Max pages to crawl")
+    p_scan.add_argument("--login-url", default=None, help="Login form URL (e.g. /login.php)")
+    p_scan.add_argument("--login-user", default=None, help="Login username")
+    p_scan.add_argument("--login-pass", default=None, help="Login password")
+    p_scan.add_argument("--json", action="store_true", help="Output as JSON (default)")
+
+    # exploit
+    p_exploit = sub.add_parser("exploit", help="Execute exploit instruction against target")
+    p_exploit.add_argument("url", help="Target URL or endpoint")
+    p_exploit.add_argument("--instruction", "-i", required=True, help="Agent's exploit instruction (natural language or structured)")
+    p_exploit.add_argument("--method", default=None, help="HTTP method override")
+    p_exploit.add_argument("--body", default=None, help="Request body override")
+    p_exploit.add_argument("--header", action="append", help="Extra header (Key: Value), repeatable")
+    p_exploit.add_argument("--json", action="store_true", help="Output as JSON (default)")
+    p_exploit.add_argument("--login-url", default=None, help="Login form URL")
+    p_exploit.add_argument("--login-user", default=None, help="Login username")
+    p_exploit.add_argument("--login-pass", default=None, help="Login password")
+
+    # sqli (auto probe)
+    p_sqli = sub.add_parser("sqli", help="Auto SQLi probe: injectable param → technique → schema → data")
+    p_sqli.add_argument("url", help="Target URL with query params (e.g. .../sqli/?id=1)")
+    p_sqli.add_argument("--param", default=None, help="Probe only this parameter")
+    p_sqli.add_argument("--max-cols", type=int, default=20, help="Max UNION columns to try")
+    p_sqli.add_argument("--login-url", default=None, help="Login form URL")
+    p_sqli.add_argument("--login-user", default=None, help="Login username")
+    p_sqli.add_argument("--login-pass", default=None, help="Login password")
+
+    p_sqli_login = sub.add_parser("sqli-login", help="SQLi probe on login form: bypass or extract credentials")
+    p_sqli_login.add_argument("base_url", help="Base URL (e.g. http://localhost:8081)")
+    p_sqli_login.add_argument("--login-url", required=True, help="Login form URL (e.g. /login.php)")
+
+    p_brute = sub.add_parser("bruteforce", help="Bruteforce login form with a dictionary (black-box)")
+    p_brute.add_argument("base_url", help="Base URL (e.g. http://localhost:8081)")
+    p_brute.add_argument("--login-url", required=True, help="Login form URL (e.g. /login.php)")
+    p_brute.add_argument("--users", default=None, help="Comma-separated usernames (default: built-in list)")
+    p_brute.add_argument("--passwords", default=None, help="Comma-separated passwords (default: built-in list)")
+    p_brute.add_argument("--max-attempts", type=int, default=100)
+
+    # verify
+    p_verify = sub.add_parser("verify", help="Reproduce a finding and capture evidence")
+    p_verify.add_argument("url", help="Target URL")
+    p_verify.add_argument("--instruction", "-i", required=True, help="How to reproduce")
+    p_verify.add_argument("--expected", default=None, help="What to expect (for pass/fail)")
+    p_verify.add_argument("--method", default=None, help="HTTP method override")
+    p_verify.add_argument("--body", default=None, help="Request body override")
+    p_verify.add_argument("--baseline-url", default=None, help="Baseline URL for comparison (default: url itself)")
+    p_verify.add_argument("--headers", default=None, help='Extra headers as JSON (e.g. \'{"Authorization":"Bearer ..."}\')')
+    p_verify.add_argument("--baseline-headers", default=None, help='Baseline headers as JSON')
+    p_verify.add_argument("--json", action="store_true", help="Output as JSON (default)")
+    p_verify.add_argument("--login-url", default=None, help="Login form URL")
+    p_verify.add_argument("--login-user", default=None, help="Login username")
+    p_verify.add_argument("--login-pass", default=None, help="Login password")
+
     args = parser.parse_args()
 
-    config = Config.load(args.config)
-    if args.db:
-        config.db_path = args.db
+    if not args.command:
+        parser.print_help()
+        sys.exit(0)
 
-    bot = BugBountyBot(config)
+    config = Config.load()
 
-    if args.once:
-        bot.start()
-        # Run one scan cycle
-        bot._rescan_job()
-        bot.stop()
-    else:
-        bot.start()
+    if args.command == "scan":
+        from scanner.context import ScannerContext
+        ctx = ScannerContext(config)
+        login = None
+        if args.login_url and args.login_user:
+            login = {"url": args.login_url, "username": args.login_user, "password": args.login_pass or ""}
+        result = ctx.scan(args.url, max_pages=args.max_pages, login=login)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
-        # Handle signals
-        def signal_handler(sig, frame):
-            bot.stop()
-            sys.exit(0)
+    elif args.command == "exploit":
+        from exploit.executor import ExploitExecutor
+        headers = {}
+        if args.header:
+            for h in args.header:
+                k, v = h.split(":", 1)
+                headers[k.strip()] = v.strip()
+        ex = ExploitExecutor(config)
+        if args.login_url and args.login_user:
+            from urllib.parse import urlparse
+            u = urlparse(args.url)
+            base = f"{u.scheme}://{u.netloc}"
+            ex.login(base, args.login_url, args.login_user, args.login_pass or "")
+        result = ex.execute(
+            url=args.url,
+            instruction=args.instruction,
+            method=args.method,
+            body=args.body,
+            headers=headers,
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+    elif args.command == "sqli":
+        from exploit.executor import ExploitExecutor
+        ex = ExploitExecutor(config)
+        if args.login_url and args.login_user:
+            from urllib.parse import urlparse
+            u = urlparse(args.url)
+            base = f"{u.scheme}://{u.netloc}"
+            ex.login(base, args.login_url, args.login_user, args.login_pass or "")
+        result = ex.sqli_probe(args.url, param=args.param, max_cols=args.max_cols)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            bot.stop()
+    elif args.command == "sqli-login":
+        from exploit.executor import ExploitExecutor
+        ex = ExploitExecutor(config)
+        result = ex.sqli_login_probe(args.base_url, args.login_url)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+
+    elif args.command == "bruteforce":
+        from exploit.bruteforce import Bruteforcer, DEFAULT_USERNAMES, DEFAULT_PASSWORDS
+        bf = Bruteforcer(config)
+        users = args.users.split(",") if args.users else DEFAULT_USERNAMES
+        pwds = args.passwords.split(",") if args.passwords else DEFAULT_PASSWORDS
+        result = bf.run(args.base_url, args.login_url, users, pwds, max_attempts=args.max_attempts)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+
+    elif args.command == "verify":
+        from verify.evidence import Verifier
+        v = Verifier(config)
+        if args.login_url and args.login_user:
+            from urllib.parse import urlparse
+            u = urlparse(args.url)
+            base = f"{u.scheme}://{u.netloc}"
+            v.login(base, args.login_url, args.login_user, args.login_pass or "")
+        result = v.verify(
+            url=args.url,
+            instruction=args.instruction,
+            expected=args.expected,
+            baseline_url=args.baseline_url,
+            method=args.method,
+            body=args.body,
+            headers=json.loads(args.headers) if args.headers else None,
+            baseline_headers=json.loads(args.baseline_headers) if args.baseline_headers else None,
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""BugBounty Bot — 중복 제거."""
+"""Cassandra Bot — 중복 제거."""
 from core.models import Finding
 from core.db import DB
 

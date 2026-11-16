@@ -1,4 +1,4 @@
-"""BugBounty Bot — API 엔드포인트 크롤링."""
+"""Cassandra Bot — API 엔드포인트 크롤링."""
 import re
 import httpx
 from typing import Optional

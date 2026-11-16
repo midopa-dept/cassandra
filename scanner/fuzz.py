@@ -1,4 +1,4 @@
-"""BugBounty Bot — Fuzzing / Anomaly 스캐너.
+"""Cassandra Bot — Fuzzing / Anomaly 스캐너.
 
 unknown 버그 탐지: 응답 길이, 상태 코드, 헤더, 콘텐츠 타입 이상.
 """

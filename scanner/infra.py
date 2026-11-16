@@ -1,4 +1,4 @@
-"""BugBounty Bot — 인프라 스캐너 (DNS, TLS, subdomain takeover, S3/GCS)."""
+"""Cassandra Bot — 인프라 스캐너 (DNS, TLS, subdomain takeover, S3/GCS)."""
 import ssl
 import socket
 import httpx

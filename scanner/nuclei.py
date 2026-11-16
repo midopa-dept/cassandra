@@ -1,4 +1,4 @@
-"""BugBounty Bot — Nuclei CLI (subprocess)."""
+"""Cassandra Bot — Nuclei CLI (subprocess)."""
 import subprocess
 import json
 import os

@@ -1,4 +1,4 @@
-"""BugBounty Bot — 웹 크롤러 (spider).
+"""Cassandra Bot — 웹 크롤러 (spider).
 
 링크, 폼, 쿼리 파라미터, JS, OpenAPI 를 자동 발견.
 """
@@ -46,7 +46,7 @@ def crawl(
         client = httpx.Client(
             timeout=10,
             follow_redirects=True,
-            headers={"User-Agent": "Mozilla/5.0 (BugBountyBot/1.0)"},
+            headers={"User-Agent": "Mozilla/5.0 (CassandraBot/1.0)"},
         )
 
     try:

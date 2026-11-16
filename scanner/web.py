@@ -1,4 +1,4 @@
-"""BugBounty Bot — 웹 앱 스캐너 orchestrator.
+"""Cassandra Bot — 웹 앱 스캐너 orchestrator.
 
 각 scanner (sqli, xss, idor, ssrf, auth) 를 호출해서 findings 수집.
 """
@@ -14,7 +14,6 @@ from scanner.auth import scan_auth_bypass
 from scanner.fuzz import scan_fuzz
 from scanner.cve import scan_cve
 from scanner.session import scan_session
-from scanner.llm import scan_llm
 
 log = get_logger("scanner.web")
 
@@ -53,9 +52,6 @@ def scan_web(asset: Asset, client: httpx.Client | None = None) -> list[Finding]:
 
     # 6d: 인증/세션 (weak_session, captcha, password_reset) — asset 단위
     findings.extend(scan_session(asset, client))
-
-    # 7b: LLM 스캐너 (분석→실행→검증) — API 키 있으면 실행
-    findings.extend(scan_llm(asset, client))
 
     if close_client:
         client.close()

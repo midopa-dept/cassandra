@@ -1,4 +1,4 @@
-"""BugBounty Bot — CVE 매칭 (Wappalyzer + NVD)."""
+"""Cassandra Bot — CVE 매칭 (Wappalyzer + NVD)."""
 import httpx
 import re
 from typing import Optional

@@ -1,4 +1,4 @@
-"""BugBounty Bot — 스케줄러."""
+"""Cassandra Bot — 스케줄러."""
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from .logger import get_logger

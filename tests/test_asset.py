@@ -1,4 +1,4 @@
-"""BugBounty Bot — 자산 발견 통합 테스트."""
+"""Cassandra Bot — 자산 발견 통합 테스트."""
 import sys
 import os
 import tempfile
@@ -240,7 +240,7 @@ def test_scope():
 
 def main():
     print("=" * 50)
-    print("BugBounty Bot — Asset Discovery Test")
+    print("Cassandra Bot — Asset Discovery Test")
     print("=" * 50)
 
     test_ct()

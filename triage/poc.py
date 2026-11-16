@@ -1,4 +1,4 @@
-"""BugBounty Bot — PoC 스크린샷 (Playwright)."""
+"""Cassandra Bot — PoC 스크린샷 (Playwright)."""
 import base64
 import os
 from typing import Optional
@@ -57,7 +57,7 @@ def generate_poc_with_screenshot(finding: Finding, output_dir: str = "poc_screen
         return {"curl": "", "screenshot": None}
 
     # Generate curl command
-    from triage.llm import generate_poc_curl
+    from exploit.poc import generate_poc_curl
     curl_cmd = generate_poc_curl(finding)
 
     # Capture screenshot

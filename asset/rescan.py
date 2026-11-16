@@ -1,4 +1,4 @@
-"""BugBounty Bot — 기존 자산 재스캔."""
+"""Cassandra Bot — 기존 자산 재스캔."""
 import time
 from datetime import datetime, timedelta
 from core.db import DB

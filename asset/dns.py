@@ -1,4 +1,4 @@
-"""BugBounty Bot — DNS brute-force + recon."""
+"""Cassandra Bot — DNS brute-force + recon."""
 import dns.resolver
 import dns.reversename
 from typing import Optional

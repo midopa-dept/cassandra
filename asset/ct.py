@@ -1,4 +1,4 @@
-"""BugBounty Bot — Certificate Transparency (CT) log 폴링."""
+"""Cassandra Bot — Certificate Transparency (CT) log 폴링."""
 import httpx
 import json
 from typing import Optional

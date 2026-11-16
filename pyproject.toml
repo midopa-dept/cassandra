@@ -1,7 +1,7 @@
 [project]
-name = "bugbounty-bot"
+name = "cassandra"
 version = "0.1.0"
-description = "Automated bug bounty discovery, reporting, and submission bot"
+description = "Generic vulnerability scanner, exploit generator, and verifier — agent-driven"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27",
@@ -9,8 +9,6 @@ dependencies = [
     "apscheduler>=3.10",
     "dnspython>=2.4",
     "playwright>=1.40",
-    "openai>=1.0",
-    "anthropic>=0.20",
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "flask-socketio>=5.7.2",
@@ -23,11 +21,11 @@ dev = [
 ]
 
 [project.scripts]
-bugbounty-bot = "core.main:main"
+cassandra = "core.main:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["core", "asset", "scanner", "triage", "hackerone", "web"]
+packages = ["core", "asset", "scanner", "triage", "exploit", "verify", "web"]

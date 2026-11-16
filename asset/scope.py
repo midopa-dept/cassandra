@@ -1,4 +1,4 @@
-"""BugBounty Bot — HackerOne 프로그램 scope 관리."""
+"""Cassandra Bot — 대상 스코프(scope) 관리."""
 import re
 from typing import Optional
 from core.logger import get_logger
@@ -7,7 +7,7 @@ log = get_logger("asset.scope")
 
 
 def parse_scope(scope_str: str) -> list[dict]:
-    """HackerOne scope 문자열 파싱.
+    """프로그램 scope 문자열 파싱.
     
     Examples:
         "*.example.com" → wildcard

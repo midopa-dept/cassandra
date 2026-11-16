@@ -1,4 +1,4 @@
-"""BugBounty Bot — API 스캐너 (REST/GraphQL)."""
+"""Cassandra Bot — API 스캐너 (REST/GraphQL)."""
 import httpx
 import json
 from typing import Optional
@@ -13,7 +13,7 @@ log = get_logger("scanner.api")
 def scan_rest_auth(base_url: str, endpoints: list[str], auth_header: Optional[str] = None) -> list[Finding]:
     """REST API: auth bypass, missing auth."""
     findings = []
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; BugBountyBot/0.1)"}
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; CassandraBot/0.1)"}
 
     for endpoint in endpoints:
         url = endpoint if endpoint.startswith("http") else f"{base_url}{endpoint}"
@@ -67,7 +67,7 @@ def scan_rest_rate_limit(base_url: str, endpoint: str) -> list[Finding]:
     """REST API: rate limit bypass."""
     findings = []
     url = endpoint if endpoint.startswith("http") else f"{base_url}{endpoint}"
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; BugBountyBot/0.1)"}
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; CassandraBot/0.1)"}
 
     # Send 10 requests quickly
     status_codes = []
@@ -97,7 +97,7 @@ def scan_rest_injection(base_url: str, endpoint: str, params: dict[str, str]) ->
     """REST API: injection (SQLi, XSS, etc.)."""
     findings = []
     url = endpoint if endpoint.startswith("http") else f"{base_url}{endpoint}"
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; BugBountyBot/0.1)"}
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; CassandraBot/0.1)"}
 
     # SQLi payloads
     sqli_payloads = ["' OR 1=1--", "1 UNION SELECT NULL--", "'; DROP TABLE users;--"]
@@ -251,7 +251,7 @@ def scan_nosqli(base_url: str, client: Optional[httpx.Client] = None) -> list[Fi
         # baseline: 정상 문자열 credential
         baseline = None
         try:
-            baseline = client.post(url, json={"email": "probe@bugbounty.local", "password": "probe-pass-123"}, timeout=10)
+            baseline = client.post(url, json={"email": "probe@cassandra.local", "password": "probe-pass-123"}, timeout=10)
         except Exception:
             continue
         if baseline.status_code == 404 or "unexpected path" in baseline.text.lower():
@@ -259,7 +259,7 @@ def scan_nosqli(base_url: str, client: Optional[httpx.Client] = None) -> list[Fi
 
         for op in NOSQLI_OPERATORS:
             for field in ("email", "username", "password"):
-                body = {"email": "probe@bugbounty.local", "password": "probe-pass-123"}
+                body = {"email": "probe@cassandra.local", "password": "probe-pass-123"}
                 body[field] = op
                 try:
                     resp = client.post(url, json=body, timeout=10)
@@ -308,7 +308,7 @@ def scan_admin_registration(base_url: str, client: Optional[httpx.Client] = None
 
     for path in candidates:
         url = base_url.rstrip("/") + path
-        email = f"probe-{int(__import__('time').time())}@bugbounty.local"
+        email = f"probe-{int(__import__('time').time())}@cassandra.local"
         body = {"email": email, "password": "probe-pass-123", "role": "admin"}
         try:
             resp = client.post(url, json=body, timeout=10)

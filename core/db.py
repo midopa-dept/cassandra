@@ -1,15 +1,15 @@
-"""BugBounty Bot — SQLite 저장소."""
+"""Cassandra Bot — SQLite 저장소."""
 import sqlite3
 import json
 import os
 from typing import Optional
-from .models import Asset, Finding, Report, Submission
+from .models import Asset, Finding, Report
 
 
 class DB:
     """SQLite 기반 저장소."""
 
-    def __init__(self, path: str = "bugbounty.db"):
+    def __init__(self, path: str = "cassandra.db"):
         self.path = path
         self._conn_obj = None
         self._init()
@@ -64,22 +64,9 @@ class DB:
                 recommendation TEXT DEFAULT '',
                 rating TEXT DEFAULT 'medium',
                 status TEXT DEFAULT 'draft',
-                hackerone_id TEXT,
-                payout REAL,
                 created_at TEXT,
                 updated_at TEXT,
                 FOREIGN KEY (finding_id) REFERENCES findings(id)
-            );
-            CREATE TABLE IF NOT EXISTS submissions (
-                id TEXT PRIMARY KEY,
-                report_id TEXT NOT NULL,
-                hackerone_report_id TEXT DEFAULT '',
-                program TEXT DEFAULT '',
-                status TEXT DEFAULT 'submitted',
-                payout REAL,
-                submitted_at TEXT,
-                updated_at TEXT,
-                FOREIGN KEY (report_id) REFERENCES reports(id)
             );
             CREATE INDEX IF NOT EXISTS idx_findings_asset ON findings(asset_id);
             CREATE INDEX IF NOT EXISTS idx_findings_status ON findings(status);
@@ -230,13 +217,13 @@ class DB:
     def save_report(self, report: Report):
         conn = self._conn()
         conn.execute("""
-            INSERT OR REPLACE INTO reports (id, finding_id, asset_id, program, title, summary, poc, impact, recommendation, rating, status, hackerone_id, payout, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO reports (id, finding_id, asset_id, program, title, summary, poc, impact, recommendation, rating, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             report.id, report.finding_id, report.asset_id, report.program,
             report.title, report.summary, report.poc, report.impact,
             report.recommendation, report.rating, report.status,
-            report.hackerone_id, report.payout, report.created_at, report.updated_at,
+            report.created_at, report.updated_at,
         ))
         conn.commit()
         if self.path != ":memory:":
@@ -261,8 +248,6 @@ class DB:
             "recommendation": row["recommendation"],
             "rating": row["rating"],
             "status": row["status"],
-            "hackerone_id": row["hackerone_id"],
-            "payout": row["payout"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         })
@@ -292,55 +277,19 @@ class DB:
             "recommendation": r["recommendation"],
             "rating": r["rating"],
             "status": r["status"],
-            "hackerone_id": r["hackerone_id"],
-            "payout": r["payout"],
             "created_at": r["created_at"],
             "updated_at": r["updated_at"],
         }) for r in rows]
 
-    def update_report_status(self, report_id: str, status: str, hackerone_id: Optional[str] = None, payout: Optional[float] = None):
+    def update_report_status(self, report_id: str, status: str):
         conn = self._conn()
         conn.execute("""
-            UPDATE reports SET status = ?, hackerone_id = COALESCE(?, hackerone_id), payout = COALESCE(?, payout), updated_at = datetime('now')
+            UPDATE reports SET status = ?, updated_at = datetime('now')
             WHERE id = ?
-        """, (status, hackerone_id, payout, report_id))
+        """, (status, report_id))
         conn.commit()
         if self.path != ":memory:":
             conn.close()
-
-    # ── Submissions ───────────────────────────────────────────────────
-
-    def save_submission(self, sub: Submission):
-        conn = self._conn()
-        conn.execute("""
-            INSERT OR REPLACE INTO submissions (id, report_id, hackerone_report_id, program, status, payout, submitted_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            sub.id, sub.report_id, sub.hackerone_report_id, sub.program,
-            sub.status, sub.payout, sub.submitted_at, sub.updated_at,
-        ))
-        conn.commit()
-        if self.path != ":memory:":
-            conn.close()
-
-    def list_submissions(self, status: Optional[str] = None) -> list[Submission]:
-        conn = self._conn()
-        if status:
-            rows = conn.execute("SELECT * FROM submissions WHERE status = ?", (status,)).fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM submissions").fetchall()
-        if self.path != ":memory:":
-            conn.close()
-        return [Submission.from_dict({
-            "id": r["id"],
-            "report_id": r["report_id"],
-            "hackerone_report_id": r["hackerone_report_id"],
-            "program": r["program"],
-            "status": r["status"],
-            "payout": r["payout"],
-            "submitted_at": r["submitted_at"],
-            "updated_at": r["updated_at"],
-        }) for r in rows]
 
     # ── Stats ─────────────────────────────────────────────────────────
 
@@ -350,9 +299,7 @@ class DB:
         findings = conn.execute("SELECT COUNT(*) as c FROM findings").fetchone()["c"]
         findings_confirmed = conn.execute("SELECT COUNT(*) as c FROM findings WHERE status = 'confirmed'").fetchone()["c"]
         reports = conn.execute("SELECT COUNT(*) as c FROM reports").fetchone()["c"]
-        reports_submitted = conn.execute("SELECT COUNT(*) as c FROM reports WHERE status = 'submitted'").fetchone()["c"]
         reports_accepted = conn.execute("SELECT COUNT(*) as c FROM reports WHERE status = 'accepted'").fetchone()["c"]
-        total_payout = conn.execute("SELECT COALESCE(SUM(payout), 0) as s FROM reports").fetchone()["s"]
         if self.path != ":memory:":
             conn.close()
         return {
@@ -360,7 +307,5 @@ class DB:
             "findings": findings,
             "findings_confirmed": findings_confirmed,
             "reports": reports,
-            "reports_submitted": reports_submitted,
             "reports_accepted": reports_accepted,
-            "total_payout": total_payout,
         }

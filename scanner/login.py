@@ -1,4 +1,4 @@
-"""BugBounty Bot — 로그인/인증 처리 (DVWA, Juice Shop 등).
+"""Cassandra Bot — 로그인/인증 처리 (DVWA, Juice Shop 등).
 
 로그인 폼 탐지, 자동 로그인, 세션 유지.
 """

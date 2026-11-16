@@ -1,4 +1,4 @@
-"""BugBounty Bot — 파일 업로드/다운로드 스캐너.
+"""Cassandra Bot — 파일 업로드/다운로드 스캐너.
 
 file_upload: multipart 폼(file input)에 실행 가능 확장자(.php) 업로드
   → 성공 메시지 + 저장 파일이 접근·실행되는지 확인 (RCE)

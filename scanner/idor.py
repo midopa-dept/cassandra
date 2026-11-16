@@ -1,4 +1,4 @@
-"""BugBounty Bot — IDOR (Insecure Direct Object Reference) 스캐너."""
+"""Cassandra Bot — IDOR (Insecure Direct Object Reference) 스캐너."""
 import httpx
 from core.models import Asset, Endpoint, Finding
 from core.logger import get_logger

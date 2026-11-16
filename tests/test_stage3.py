@@ -1,4 +1,4 @@
-"""BugBounty Bot — 단계 3 통합 테스트 (scanner 확장 + daemon)."""
+"""Cassandra Bot — 단계 3 통합 테스트 (scanner 확장 + daemon)."""
 import sys
 import os
 import tempfile
@@ -18,7 +18,6 @@ from scanner.api import scan_rest_auth, scan_rest_rate_limit, scan_graphql_intro
 from scanner.logic import scan_race_condition, scan_payment_bypass, scan_logic
 from scanner.nuclei import is_available as nuclei_available
 from triage.poc import capture_screenshot, generate_poc_with_screenshot
-from core.main import BugBountyBot
 
 
 class MockHandler(BaseHTTPRequestHandler):
@@ -234,40 +233,35 @@ def test_poc():
 
 
 def test_daemon():
-    """Daemon mode test."""
-    print("\n[6] Daemon mode test")
+    """Config + DB round-trip test."""
+    print("\n[6] Config + DB round-trip test")
 
-    # Create config
-    config = Config()
-    config.db_path = tempfile.mktemp(suffix=".db")
-    config.hackerone.programs = ["example.com"]
-    config.scheduler.ct_min = 60
-    config.scheduler.dns_min = 360
-    config.scheduler.rescan_min = 1440
-    config.scheduler.triage_min = 60
+    config = Config.load()
+    db_path = tempfile.mktemp(suffix=".db")
+    db = DB(db_path)
 
-    # Create bot
-    bot = BugBountyBot(config)
+    # Save an asset + finding, read back
+    from core.models import Asset, Finding
+    a = Asset(domain="example.com", base_url="https://example.com", program="test")
+    db.save_asset(a)
+    loaded = db.get_asset(a.id)
+    assert loaded and loaded.domain == "example.com"
 
-    # Start
-    bot.start()
-    time.sleep(1)
+    f = Finding(asset_id=a.id, vuln_type="sqli", severity="high",
+                endpoint="/search?q=x", evidence="sql error")
+    db.save_finding(f)
+    findings = db.list_findings(status=None)
+    assert any(x.id == f.id for x in findings)
 
-    # Check scheduler
-    jobs = bot.scheduler.running_jobs()
-    print(f"   Scheduler jobs: {len(jobs)}")
-    for job in jobs:
-        print(f"     {job['id']}")
-
-    # Stop
-    bot.stop()
-    os.unlink(config.db_path)
-    print("   [✓] Daemon mode test passed")
+    stats = db.stats()
+    print(f"   stats: {stats}")
+    os.unlink(db_path)
+    print("   [✓] Config + DB round-trip test passed")
 
 
 def main():
     print("=" * 50)
-    print("BugBounty Bot — Stage 3 Integration Test")
+    print("Cassandra Bot — Stage 3 Integration Test")
     print("=" * 50)
 
     test_infra()

@@ -1,4 +1,4 @@
-"""BugBounty Bot — 실전 테스트: DVWA + Juice Shop scanner."""
+"""Cassandra Bot — 실전 테스트: DVWA + Juice Shop scanner."""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

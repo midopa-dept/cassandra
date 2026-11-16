@@ -1,4 +1,4 @@
-"""BugBounty Bot — SSRF (Server-Side Request Forgery) 스캐너."""
+"""Cassandra Bot — SSRF (Server-Side Request Forgery) 스캐너."""
 import httpx
 from core.models import Asset, Endpoint, Finding
 from core.logger import get_logger

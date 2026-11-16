@@ -1,4 +1,4 @@
-"""BugBounty Bot — 로직 버그 스캐너 (race condition, payment bypass)."""
+"""Cassandra Bot — 로직 버그 스캐너 (race condition, payment bypass)."""
 import httpx
 import time
 import threading

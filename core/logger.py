@@ -1,10 +1,10 @@
-"""BugBounty Bot — 로깅."""
+"""Cassandra Bot — 로깅."""
 import logging
 import sys
 from datetime import datetime
 
 
-def setup_logger(name: str = "bugbounty", level: int = logging.INFO) -> logging.Logger:
+def setup_logger(name: str = "cassandra", level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
@@ -16,5 +16,5 @@ def setup_logger(name: str = "bugbounty", level: int = logging.INFO) -> logging.
     return logger
 
 
-def get_logger(name: str = "bugbounty") -> logging.Logger:
+def get_logger(name: str = "cassandra") -> logging.Logger:
     return logging.getLogger(name)

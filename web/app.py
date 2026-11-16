@@ -1,4 +1,4 @@
-"""BugBounty Bot — Flask 대시보드 (WebSocket 실시간)."""
+"""Cassandra Bot — Flask 대시보드 (WebSocket 실시간)."""
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO
 from core.db import DB
@@ -60,9 +60,7 @@ def create_app(db: DB) -> tuple[Flask, SocketIO]:
     @app.route("/api/earnings")
     def api_earnings():
         reports = db.list_reports(status="accepted")
-        total = sum(r.payout or 0 for r in reports)
         return jsonify({
-            "total_payout": total,
             "accepted_count": len(reports),
             "reports": [r.to_dict() for r in reports],
         })

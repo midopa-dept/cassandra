@@ -1,4 +1,11 @@
-"""BugBounty Bot — 통합 테스트 (MVP)."""
+"""Cassandra — 통합 테스트 (MVP).
+
+도구(감각기관) 테스트:
+  [1] ScannerContext: mock 서버 관찰 → 구조화 JSON (forms/endpoints/patterns)
+  [2] ExploitExecutor: exploit 지시 실행 → 결과 캡처 + signals
+  [3] Verifier: 재현 → before/after 증거
+  [4] pattern scanners: scan_web으로 SQLi/XSS/IDOR 발견
+"""
 import sys
 import os
 import tempfile
@@ -11,12 +18,11 @@ from http.server import BaseHTTPRequestHandler
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config import Config
-from core.db import DB
-from core.models import Asset, Finding, Report
+from core.models import Asset, Finding, Endpoint
+from scanner.context import ScannerContext
 from scanner.web import scan_web
-from triage.llm import LLMClient, judge_finding, assess_severity, generate_report, generate_poc_curl
-from triage.dedup import dedup_findings
-from hackerone.client import HackerOneClient
+from exploit.executor import ExploitExecutor
+from verify.evidence import Verifier
 
 
 class MockHandler(BaseHTTPRequestHandler):
@@ -59,6 +65,20 @@ class MockHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"id": int(user_id), "name": f"User {user_id}", "email": f"user{user_id}@example.com"}).encode())
             return
 
+        # Login form page
+        if path == "/login":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"""<html><body>
+            <form action="/login" method="POST">
+              <input type="text" name="username" placeholder="user"/>
+              <input type="password" name="password" autocomplete="current-password"/>
+              <button>Login</button>
+            </form>
+            </body></html>""")
+            return
+
         # Default
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
@@ -66,7 +86,7 @@ class MockHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"<html><body><h1>Mock Server</h1></body></html>")
 
     def log_message(self, format, *args):
-        pass  # Suppress logs
+        pass
 
 
 def start_mock_server(port: int) -> http.server.HTTPServer:
@@ -76,216 +96,128 @@ def start_mock_server(port: int) -> http.server.HTTPServer:
     return server
 
 
-def test_scanner():
-    """Scanner 테스트: mock 서버에서 SQLi, XSS, IDOR 발견."""
-    print("\n[1] Scanner test")
+def test_scanner_context():
+    """ScannerContext: mock 서버 관찰 → 구조화 데이터."""
+    print("\n[1] ScannerContext test")
     port = 18901
+    server = start_mock_server(port)
+    time.sleep(0.5)
+
+    cfg = Config.load()
+    ctx = ScannerContext(cfg)
+    result = ctx.scan(f"http://127.0.0.1:{port}/login", max_pages=5)
+
+    print(f"   pages_scanned={result['pages_scanned']}")
+    print(f"   summary={json.dumps(result['summary'], ensure_ascii=False)}")
+
+    # login 페이지의 폼을 관찰했는가
+    forms_found = False
+    for p in result["pages"]:
+        for f in p.get("forms", []):
+            field_names = [fld["name"] for fld in f["fields"]]
+            if "username" in field_names and "password" in field_names:
+                forms_found = True
+    assert forms_found, "login form not observed"
+    print("   [✓] login form observed (username/password)")
+
+    server.shutdown()
+    print("   [✓] ScannerContext test passed")
+
+
+def test_exploit_executor():
+    """ExploitExecutor: SQLi payload 실행 → sql_error signal."""
+    print("\n[2] ExploitExecutor test")
+    port = 18902
+    server = start_mock_server(port)
+    time.sleep(0.5)
+
+    cfg = Config.load()
+    ex = ExploitExecutor(cfg)
+
+    # 정상 요청 (baseline)
+    baseline = ex._do_request("GET", f"http://127.0.0.1:{port}/search?q=test", {}, None)
+    # exploit 요청
+    result = ex.execute(
+        url=f"http://127.0.0.1:{port}/search",
+        instruction="q 파라미터에 ' OR 1=1-- (SQLi)",
+        method="GET",
+        compare_with=f"http://127.0.0.1:{port}/search?q=test",
+    )
+    # params를 body에 넣어 다시 (execute는 body만, query는 url에)
+    result2 = ex.execute(
+        url=f"http://127.0.0.1:{port}/search?q=%27%20OR%201%3D1--",
+        instruction="q=' OR 1=1--",
+        method="GET",
+    )
+    print(f"   signals={result2['signals']}")
+    print(f"   status={result2['response']['status']}")
+    assert "sql_error" in result2["signals"], f"expected sql_error, got {result2['signals']}"
+
+    server.shutdown()
+    print("   [✓] ExploitExecutor test passed")
+
+
+def test_verifier():
+    """Verifier: 재현 → before/after 증거."""
+    print("\n[3] Verifier test")
+    port = 18903
+    server = start_mock_server(port)
+    time.sleep(0.5)
+
+    cfg = Config.load()
+    v = Verifier(cfg)
+    result = v.verify(
+        url=f"http://127.0.0.1:{port}/search?q=%27%20OR%201%3D1--",
+        instruction="q=' OR 1=1-- (SQLi 재현)",
+        baseline_url=f"http://127.0.0.1:{port}/search?q=test",
+    )
+    print(f"   reproduced={result['reproduced']} verdict_hint={result['verdict_hint']}")
+    print(f"   evidence keys={list(result['evidence'].keys())}")
+    assert "baseline" in result["evidence"]
+    assert "exploit" in result["evidence"]
+
+    server.shutdown()
+    print("   [✓] Verifier test passed")
+
+
+def test_pattern_scanners():
+    """pattern scanners: scan_web으로 SQLi/XSS/IDOR 발견."""
+    print("\n[4] Pattern scanner test")
+    port = 18904
     server = start_mock_server(port)
     time.sleep(0.5)
 
     asset = Asset(
         domain=f"127.0.0.1:{port}",
+        base_url=f"http://127.0.0.1:{port}",
         endpoints=[
-            f"http://127.0.0.1:{port}/search?q=test",
-            f"http://127.0.0.1:{port}/api/user/1",
+            Endpoint(url=f"http://127.0.0.1:{port}/search", params=["q"]),
+            Endpoint(url=f"http://127.0.0.1:{port}/api/user/1", params=["id"]),
         ],
         program="test",
     )
 
-    findings = scan_web(asset, rate_limit=20)
-    print(f"   Found {len(findings)} findings")
-
+    findings = scan_web(asset)
     vuln_types = set(f.vuln_type for f in findings)
-    print(f"   Types: {vuln_types}")
-
-    # Dedup
-    db_path = tempfile.mktemp(suffix=".db")
-    db = DB(db_path)
-    db.save_asset(asset)
-    for f in findings:
-        f.asset_id = asset.id
-        db.save_finding(f)
-
-    deduped = dedup_findings(db, findings)
-    print(f"   After dedup: {len(deduped)}")
+    print(f"   Found {len(findings)} findings, types={vuln_types}")
+    assert len(findings) > 0, "no findings"
 
     server.shutdown()
-    os.unlink(db_path)
-    print("   [✓] Scanner test passed")
-
-
-def test_triage():
-    """Triage 테스트: LLM (mock) + PoC 생성."""
-    print("\n[2] Triage test")
-
-    # Mock LLM (no API key needed)
-    class MockLLM(LLMClient):
-        def chat(self, messages, temperature=0.3):
-            prompt = messages[-1]["content"]
-            if "is_real" in prompt:
-                return '{"is_real": true, "confidence": 0.9, "reasoning": "SQL error in response"}'
-            elif "severity" in prompt.lower() or "rating" in prompt.lower():
-                return "high"
-            elif "Title:" in prompt:
-                return """Title: SQL Injection in /search endpoint
-Summary: The /search endpoint is vulnerable to SQL injection via the 'q' parameter.
-PoC:
-curl 'http://127.0.0.1:18901/search?q=%27%20OR%201=1--'
-Impact: Attacker can extract database contents.
-Recommendation: Use parameterized queries."""
-            return "ok"
-
-    llm = MockLLM(provider="openai", model="gpt-4o", api_key="mock")
-
-    finding = Finding(
-        vuln_type="sqli",
-        severity="high",
-        endpoint="http://127.0.0.1:18901/search?q=' OR 1=1--",
-        method="GET",
-        evidence="SQL error detected",
-        poc_request={"method": "GET", "url": "http://127.0.0.1:18901/search", "params": {"q": "' OR 1=1--"}},
-    )
-    asset = Asset(domain="127.0.0.1:18901", program="test")
-
-    # Judge
-    result = judge_finding(llm, finding, asset)
-    print(f"   Judge: is_real={result['is_real']}, confidence={result['confidence']}")
-    assert result["is_real"] is True
-
-    # Severity
-    severity = assess_severity(llm, finding, asset)
-    print(f"   Severity: {severity}")
-    assert severity == "high"
-
-    # Report
-    report = generate_report(llm, finding, asset, severity)
-    print(f"   Report: {report.title}")
-    print(f"   PoC: {repr(report.poc)}")
-    assert report.title
-    assert report.poc is not None
-
-    # PoC curl
-    poc_curl = generate_poc_curl(finding)
-    print(f"   PoC: {poc_curl[:80]}...")
-    assert "curl" in poc_curl
-
-    print("   [✓] Triage test passed")
-
-
-def test_hackerone():
-    """HackerOne client 테스트 (mock)."""
-    print("\n[3] HackerOne client test")
-
-    # Mock client (no real API call)
-    class MockH1(HackerOneClient):
-        def __init__(self):
-            pass  # Skip real init
-
-        def _graphql(self, query, variables=None):
-            if "createSubmission" in query:
-                return {"createSubmission": {"submission": {"id": "12345", "url": "https://hackerone.com/12345"}}}
-            if "viewer" in query:
-                return {"viewer": {"collaborations": {"edges": [{"node": {"id": "1", "name": "Test Program", "handle": "test", "offersBounties": True}}]}}}
-            if "submission" in query:
-                return {"submission": {"id": "12345", "state": "triaging", "title": "Test", "bounty": 500, "reward": 500}}
-            return {}
-
-    client = MockH1()
-
-    # List programs
-    programs = client.list_programs()
-    print(f"   Programs: {len(programs)}")
-    assert len(programs) == 1
-
-    # Create report
-    report = Report(
-        title="SQL Injection in /search",
-        summary="SQLi via q parameter",
-        poc="curl 'http://example.com/search?q=%27%20OR%201=1--'",
-        impact="Data extraction",
-        recommendation="Use parameterized queries",
-        rating="high",
-        program="test",
-    )
-    report_id = client.create_report(report, "test")
-    print(f"   Report ID: {report_id}")
-    assert report_id == "12345"
-
-    # Get status
-    status = client.get_report_status("12345")
-    print(f"   Status: {status.get('state')}, bounty: {status.get('bounty')}")
-    assert status.get("state") == "triaging"
-
-    print("   [✓] HackerOne client test passed")
-
-
-def test_web():
-    """Web dashboard 테스트."""
-    print("\n[4] Web dashboard test")
-
-    import tempfile
-    db_path = tempfile.mktemp(suffix=".db")
-    db = DB(db_path)
-
-    # Add test data
-    asset = Asset(domain="example.com", program="test")
-    db.save_asset(asset)
-    finding = Finding(asset_id=asset.id, vuln_type="sqli", severity="high", endpoint="/search")
-    db.save_finding(finding)
-    report = Report(finding_id=finding.id, asset_id=asset.id, program="test", title="SQLi", rating="high", status="draft")
-    db.save_report(report)
-
-    from web.app import create_app
-    app, socketio = create_app(db)
-
-    with app.test_client() as client:
-        # Dashboard
-        resp = client.get("/")
-        assert resp.status_code == 200
-        assert b"BugBounty Bot" in resp.data
-        print("   Dashboard: 200 OK")
-
-        # API stats
-        resp = client.get("/api/stats")
-        data = resp.get_json()
-        assert data["assets"] == 1
-        assert data["findings"] == 1
-        print(f"   Stats: {data}")
-
-        # API findings
-        resp = client.get("/api/findings")
-        findings = resp.get_json()
-        assert len(findings) == 1
-        print(f"   Findings: {len(findings)}")
-
-        # API reports
-        resp = client.get("/api/reports")
-        reports = resp.get_json()
-        assert len(reports) == 1
-        print(f"   Reports: {len(reports)}")
-
-        # Submit report
-        resp = client.post(f"/api/reports/{report.id}/submit")
-        data = resp.get_json()
-        assert data["status"] == "submitted"
-        print("   Submit: OK")
-
-    os.unlink(db_path)
-    print("   [✓] Web dashboard test passed")
+    print("   [✓] Pattern scanner test passed")
 
 
 def main():
     print("=" * 50)
-    print("BugBounty Bot — MVP Integration Test")
+    print("Cassandra — Integration Test")
     print("=" * 50)
 
-    test_scanner()
-    test_triage()
-    test_hackerone()
-    test_web()
+    test_scanner_context()
+    test_exploit_executor()
+    test_verifier()
+    test_pattern_scanners()
 
     print("\n" + "=" * 50)
-    print("All MVP tests passed!")
+    print("All tests passed!")
     print("=" * 50)
 
 

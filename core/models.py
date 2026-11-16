@@ -1,4 +1,4 @@
-"""BugBounty Bot — 공통 데이터 모델."""
+"""Cassandra Bot — 공통 데이터 모델."""
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
@@ -153,7 +153,7 @@ class Finding:
 
 @dataclass
 class Report:
-    """HackerOne 제출용 리포트."""
+    """발견된 취약점에 대한 리포트 (에이전트가 작성)."""
     id: str = field(default_factory=_uuid)
     finding_id: str = ""
     asset_id: str = ""
@@ -164,9 +164,7 @@ class Report:
     impact: str = ""
     recommendation: str = ""
     rating: str = "medium"  # low, medium, high, critical
-    status: str = "draft"  # draft, submitted, triaging, accepted, rejected, resolved, paid
-    hackerone_id: Optional[str] = None
-    payout: Optional[float] = None
+    status: str = "draft"  # draft, verified, reported, accepted, rejected
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -183,8 +181,6 @@ class Report:
             "recommendation": self.recommendation,
             "rating": self.rating,
             "status": self.status,
-            "hackerone_id": self.hackerone_id,
-            "payout": self.payout,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -203,48 +199,6 @@ class Report:
             recommendation=d.get("recommendation", ""),
             rating=d.get("rating", "medium"),
             status=d.get("status", "draft"),
-            hackerone_id=d.get("hackerone_id"),
-            payout=d.get("payout"),
             created_at=d.get("created_at", _now()),
-            updated_at=d.get("updated_at", _now()),
-        )
-
-
-# ── 제출 ──────────────────────────────────────────────────────────────
-
-@dataclass
-class Submission:
-    """HackerOne 제출 기록."""
-    id: str = field(default_factory=_uuid)
-    report_id: str = ""
-    hackerone_report_id: str = ""
-    program: str = ""
-    status: str = "submitted"  # submitted, triaging, resolved, paid
-    payout: Optional[float] = None
-    submitted_at: str = field(default_factory=_now)
-    updated_at: str = field(default_factory=_now)
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "report_id": self.report_id,
-            "hackerone_report_id": self.hackerone_report_id,
-            "program": self.program,
-            "status": self.status,
-            "payout": self.payout,
-            "submitted_at": self.submitted_at,
-            "updated_at": self.updated_at,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "Submission":
-        return cls(
-            id=d.get("id", _uuid()),
-            report_id=d.get("report_id", ""),
-            hackerone_report_id=d.get("hackerone_report_id", ""),
-            program=d.get("program", ""),
-            status=d.get("status", "submitted"),
-            payout=d.get("payout"),
-            submitted_at=d.get("submitted_at", _now()),
             updated_at=d.get("updated_at", _now()),
         )
