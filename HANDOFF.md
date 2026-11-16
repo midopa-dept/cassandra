@@ -136,11 +136,17 @@ bugbounty/
 | test_stage4.py | track + submit + websocket | ✓ |
 | test_live.py | **실전**: DVWA + Juice Shop (colima 필요) | ✓ 51 findings |
 
-**실행**: `.venv/bin/python tests/test_live.py` (colima + docker 컨테이너 필요)
+**실행**: `colima start stewart --cpu 2 --memory 4 --mount /Volumes/Dev/stewart-work:w` → `unset DOCKER_HOST` → `cd demo && docker-compose up -d dvwa juice-shop` → `.venv/bin/python tests/test_live.py`
 
 ## 7. 환경
 
-- **colima**: **Stopped** (2026-11-12) — 시작: `colima start` → 컨테이너: `DOCKER_HOST=unix:///Users/midopa/.colima/default/docker.sock docker start demo-dvwa-1 demo-juice-shop-1` (DVWA `:8081`, Juice Shop `:3000`)
+- **colima**: **stewart 프로파일** (2 CPU / 4GiB, `/Volumes/Dev/stewart-work` 마운트)
+  - 기동: `colima start stewart --cpu 2 --memory 4 --mount /Volumes/Dev/stewart-work:w`
+  - 종료: `colima stop stewart`
+  - docker context: `colima-stewart` (colima start 시 자동 전환)
+  - **주의**: 셸에 `DOCKER_HOST`가 export되어 있으면 context를 override한다 → `unset DOCKER_HOST`
+  - 컨테이너: `cd demo && docker-compose up -d dvwa juice-shop` (DVWA `:8081`, Juice Shop `:3000`)
+  - DVWA는 amd64 이미지 → arm64 VM에서 에뮬레이션(느림)
 - **Python**: `.venv` (uv, 3.13) — `python3` 또는 `.venv/bin/python`
 - **DVWA**: MySQL (app/vulnerables), admin/password. 로그인 실패 시 자동 DB reset
 - **Juice Shop**: v20.2.0, MongoDB, API `/api/*`
