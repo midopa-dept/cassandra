@@ -2,9 +2,15 @@
 
 # Cassandra
 
-**A black-box web vulnerability finder.**
+[한국어](README.md) · [English](README.en.md)
+
+**A black-box web vulnerability finder using a small LLM model (27B-class).**
+
+Built with the [Qwen3.8 27B Abliterated model](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated) and the [Stewart executor](https://github.com/midopa-dept/stewart).
 
 Cassandra does not make decisions on its own. It is designed as a **toolset for an LLM coding agent**. When the agent calls `python -m core.main <command>` via `run_shell`, Cassandra sends and receives HTTP traffic and returns the result as **JSON**. It reports *observations* only — "there is a form here", "putting `'` in this parameter raises an error", "this API returns 200 with no token". The *judgment* — *"not knowing the credentials, what path opens it? registration? SQLi login bypass? IDOR?"* — is made by the brain, i.e. the **LLM agent**.
+
+The verification process used the same model and executor as the build process.
 
 ---
 
