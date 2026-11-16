@@ -1,7 +1,7 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-11
-**현재 단계**: scanner 분할 완료, 실전 테스트 대기 (Docker/colima 꺼짐)
+**현재 단계**: 실전 테스트 진행 중 — DVWA DB 초기화 + authenticated crawl 수정
 
 ## 완료된 작업
 
@@ -62,10 +62,21 @@
 
 **해결**: 파일 분할로 완료. `scanner/web.py` (39줄 orchestrator) + 7개 개별 scanner (sqli, xss, idor, ssrf, auth, fuzz, cve) + login.
 
-### 실전 테스트 대기
+### 실전 테스트 — 진행 중
 
-Docker 데몬(colima)이 꺼져 있어 DVWA + Juice Shop 컨테이너를 띄울 수 없는 상태.
-`colima start` 후 `demo/docker-compose.yml` 로 컨테이너 기동 필요.
+Docker/colima 기동 완료. DVWA(:8081) + Juice Shop(:3000) 컨테이너 Running.
+
+**1차 테스트 결과:**
+- DVWA: 3 findings (CVE — Apache HTTP/2 rapid reset) — 실제 취약점 아님
+- Juice Shop: 0 findings
+
+**문제:**
+1. DVWA: 로그인 POST 302→setup.php (성공)인데, 그 cookie 로 `/vulnerabilities/sqli/` GET 시 302→login.php (미인증). **원인: DB 미초기화** — setup.php 에서 "Create/Reset Database" 를 안 누르면 session 이 유지 안 됨.
+2. Juice Shop: API endpoint 는 찾지만 params 가 비어서 scanner 가 payload 를 못 주입.
+
+**해결 방안:**
+1. DVWA: login 후 setup.php 로 가서 DB reset (POST `Reset=Reset` + `user_token`) → 그 다음 authenticated crawl
+2. Juice Shop: API endpoint 에 기본 params (`?id=1`, `?name=test`) 주입해서 scanner 테스트
 
 ## 다음 단계
 
@@ -74,7 +85,9 @@ Docker 데몬(colima)이 꺼져 있어 DVWA + Juice Shop 컨테이너를 띄울 
 3. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ ✓
 4. ~~`scanner/cve.py` (NVD + Wappalyzer)~~ ✓
 5. ~~`scanner/login.py` (DVWA 로그인)~~ ✓
-6. 실전 테스트: DVWA + Juice Shop 에서 실제 findings (Docker/colima start 필요)
+6. 실전 테스트: DVWA + Juice Shop 에서 실제 findings (진행 중)
+   - DVWA: DB 초기화 + authenticated crawl 수정 필요
+   - Juice Shop: API params 탐지 보완 필요
 7. HANDOFF.md 업데이트
 
 ## 파일 목록
@@ -171,10 +184,10 @@ bugbounty/
 
 | 앱 | 상태 | 문제 |
 |----|------|------|
-| Juice Shop | `:3000` 200 OK | `/api/products` 만 200, scanner 0 findings |
-| DVWA | `:8081` 302→login.php | 로그인 필요, scanner 0 findings |
+| Juice Shop | `:3000` 200 OK | `/api/products` 만 200, scanner 0 findings — API params 미탐지 |
+| DVWA | `:8081` 302→login.php | 로그인 성공(302→setup.php)인데 DB 미초기화로 session 유지 안 됨 |
 
-**원인**: `scan_web(asset)` 는 `asset.endpoints` 를 순회하는데, endpoints 가 비어있거나, 쿼리 파라미터 (`?id=1`) 를 자동 탐지 안 함.
+**원인**: DVWA 는 setup.php 에서 DB reset 을 해야 session 이 유지됨. Juice Shop 은 API endpoint 에 params 가 없어서 scanner 가 payload 를 못 주입.
 
 ## 해결 방안
 

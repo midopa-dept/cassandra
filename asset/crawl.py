@@ -36,7 +36,7 @@ def crawl(
         base_url: "http://localhost:3000"
         max_pages: 최대 크롤 페이지 수
         max_depth: 최대 크롤 깊이
-        client: httpx.Client (없으면 새로 생성)
+        client: httpx.Client (없으면 새로 생성, authenticated client 가능)
 
     Returns:
         발견된 Endpoint 목록
@@ -192,6 +192,10 @@ def crawl_api(base_url: str, client: Optional[httpx.Client] = None) -> list[Endp
             "/graphql",
             "/openapi.json", "/swagger.json", "/swagger.yaml",
             "/docs", "/api-docs",
+            # Juice Shop specific
+            "/api/Products", "/api/Basket", "/api/Customers",
+            "/api/Health", "/api/Settings", "/api/Challenges",
+            "/api/Feedback", "/api/Logins", "/api/Users",
         ]
 
         for path in api_paths:
@@ -210,6 +214,10 @@ def crawl_api(base_url: str, client: Optional[httpx.Client] = None) -> list[Endp
                             data = resp.json()
                             if isinstance(data, dict):
                                 ep.params = list(data.keys())[:10]
+                            elif isinstance(data, list) and data:
+                                # List of objects: extract keys from first item
+                                if isinstance(data[0], dict):
+                                    ep.params = list(data[0].keys())[:10]
                         except Exception:
                             pass
                     endpoints.append(ep)

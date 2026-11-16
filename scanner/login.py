@@ -76,19 +76,18 @@ def find_login_form(asset: Asset, client: httpx.Client) -> Endpoint | None:
 
 
 def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -> bool:
-    """로그인: 폼 탐지 + POST + 세션 확인."""
+    """로그인: 폼 탐지 + CSRF token + POST + 세션 확인."""
     if not asset.base_url:
         return False
 
     # 크레덴셜 선택
     if credentials is None:
-        # base_url 로 앱 추정
         if "dvwa" in asset.base_url.lower():
             credentials = DVWA_CREDENTIALS
         elif "juice" in asset.base_url.lower():
             credentials = JUICE_SHOP_CREDENTIALS
         else:
-            credentials = DVWA_CREDENTIALS  # 기본
+            credentials = DVWA_CREDENTIALS
 
     # 로그인 폼 탐지
     login_ep = find_login_form(asset, client)
@@ -96,7 +95,6 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
         log.warning("no login form found for %s", asset.base_url)
         return False
 
-    # 로그인 POST
     try:
         # DVWA 스타일
         if "dvwa" in asset.base_url.lower():
@@ -105,6 +103,13 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
                 "password": credentials.get("pass", "password"),
                 "Login": "Login",
             }
+            # CSRF token 추출
+            resp = client.get(login_ep.url, timeout=10)
+            import re
+            m = re.search(r"name='user_token'\s+value='([^']+)'", resp.text)
+            if m:
+                data["user_token"] = m.group(1)
+                log.info("CSRF token: %s", m.group(1))
         else:
             data = {
                 "username": credentials.get("username", credentials.get("user", "admin")),
@@ -115,14 +120,15 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
 
         # 로그인 성공 확인
         if resp.status_code in (200, 302):
-            # Redirect 후 authenticated 페이지 확인
             if resp.status_code == 302:
                 location = resp.headers.get("location", "")
+                # 상대 경로 절대화
+                if location.startswith("/"):
+                    location = urljoin(login_ep.url, location)
                 if "login" not in location.lower():
                     log.info("login success (redirect): %s", location)
                     return True
 
-            # 200: authenticated content 확인
             if "logout" in resp.text.lower() or "dashboard" in resp.text.lower():
                 log.info("login success (200): %s", login_ep.url)
                 return True
@@ -136,8 +142,11 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
 
 
 def get_authenticated_client(asset: Asset, credentials: dict | None = None) -> httpx.Client:
-    """인증된 httpx.Client 반환 (cookie jar 유지)."""
-    client = httpx.Client(base_url=asset.base_url, follow_redirects=True)
+    """인증된 httpx.Client 반환 (cookie jar 유지).
+
+    follow_redirects=False 로 로그인 302 의 상대 Location 파싱 버그 회피.
+    """
+    client = httpx.Client(base_url=asset.base_url, follow_redirects=False)
 
     if login(asset, client, credentials):
         log.info("authenticated client ready for %s", asset.base_url)
