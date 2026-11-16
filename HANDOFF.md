@@ -1,7 +1,7 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-11
-**현재 단계**: scanner 분할 완료, 실전 테스트 대기
+**현재 단계**: scanner 분할 완료, 실전 테스트 대기 (Docker/colima 꺼짐)
 
 ## 완료된 작업
 
@@ -44,12 +44,15 @@
 ### 재설계 — 완료
 - `core/models.py` — `Asset.base_url` + `Endpoint` dataclass 추가 ✓
 - `asset/crawl.py` — 웹 크롤러 (224줄) ✓
-- `scanner/web.py` — orchestrator (37줄) ✓
+- `scanner/web.py` — orchestrator (39줄) ✓
 - `scanner/sqli.py` — SQLi scanner (110줄) ✓
 - `scanner/xss.py` — XSS scanner (81줄) ✓
 - `scanner/idor.py` — IDOR scanner (76줄) ✓
 - `scanner/ssrf.py` — SSRF scanner (92줄) ✓
 - `scanner/auth.py` — Auth bypass scanner (98줄) ✓
+- `scanner/fuzz.py` — Fuzzing/Anomaly scanner (144줄) ✓
+- `scanner/cve.py` — CVE scanner (121줄) ✓
+- `scanner/login.py` — Login/auth handler (148줄) ✓
 
 ## 현재 문제
 
@@ -57,7 +60,12 @@
 
 `write_file` 로 14KB 파일 쓰려는데 17줄로 truncation.
 
-**해결**: 파일 분할로 완료. `scanner/web.py` (37줄 orchestrator) + 5개 개별 scanner (sqli, xss, idor, ssrf, auth).
+**해결**: 파일 분할로 완료. `scanner/web.py` (39줄 orchestrator) + 7개 개별 scanner (sqli, xss, idor, ssrf, auth, fuzz, cve) + login.
+
+### 실전 테스트 대기
+
+Docker 데몬(colima)이 꺼져 있어 DVWA + Juice Shop 컨테이너를 띄울 수 없는 상태.
+`colima start` 후 `demo/docker-compose.yml` 로 컨테이너 기동 필요.
 
 ## 다음 단계
 
@@ -66,7 +74,7 @@
 3. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ ✓
 4. ~~`scanner/cve.py` (NVD + Wappalyzer)~~ ✓
 5. ~~`scanner/login.py` (DVWA 로그인)~~ ✓
-6. 실전 테스트: DVWA + Juice Shop 에서 실제 findings
+6. 실전 테스트: DVWA + Juice Shop 에서 실제 findings (Docker/colima start 필요)
 7. HANDOFF.md 업데이트
 
 ## 파일 목록
@@ -105,7 +113,7 @@ bugbounty/
 │   └── crawl.py        # 웹 크롤러 (224줄)
 ├── scanner/
 │   ├── __init__.py
-│   ├── web.py          # orchestrator (37줄)
+│   ├── web.py          # orchestrator (39줄)
 │   ├── infra.py
 │   ├── api.py
 │   ├── logic.py
