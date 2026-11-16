@@ -5,13 +5,13 @@
   weak_session  : 엔드포인트를 반복 요청 → Set-Cookie 수집 → 재생성되는
                   cookie(값이 바뀔 때마다 새로 발급)를 찾아, 그 값이
                   순차/저엔트로피/짧으면 예측 가능 세션 ID로 판정.
-                  (DVWA weak_id: dvwaSession=1,2,3,4,5 순차)
+                  (예: DVWA weak_id: dvwaSession=1,2,3,4,5 순차)
   captcha       : CAPTCHA 페이지 탐지 → 우회 신호:
                     (a) reCAPTCHA/hCaptcha sitekey 빈/누락 (비활성)
                     (b) "key missing" 경고
                     (c) 같은 session에서 CAPTCHA 이미지 재사용
                     (d) CAPTCHA 값 추측(0/1/1234) → 성공
-                  (DVWA captcha: sitekey='' → 우회)
+                  (예: DVWA captcha: sitekey='' → 우회)
   password_reset: reset/forgot endpoint 탐지 → token 추출 → 단순성/엔트로피.
                   (email 기반이면 토큰 미추출 → finding 없음, 오탐 방지)
 

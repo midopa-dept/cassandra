@@ -26,13 +26,13 @@ LOGIN_PATHS = [
     "/do_login",
 ]
 
-# DVWA 기본 크레덴셜
+# DVWA 기본 크레덴셜 (예시 — 실제 앱은 config.yaml에서 설정)
 DVWA_CREDENTIALS = {
     "user": "admin",
     "pass": "password",
 }
 
-# Juice Shop 기본 크레덴셜
+# Juice Shop 기본 크레덴셜 (예시 — 실제 앱은 config.yaml에서 설정)
 JUICE_SHOP_CREDENTIALS = {
     "username": "admin",
     "password": "admin123",

@@ -195,7 +195,7 @@ STORED_XSS_PAYLOADS = [
 
 def scan_stored_xss(asset: Asset, endpoint: Endpoint, client: httpx.Client) -> list[Finding]:
     """Stored XSS: 폼 필드에 XSS payload를 POST로 저장 → 같은 페이지 GET에서
-    payload가 인코딩 없이 반사되는지 확인. (DVWA xss_s 등)"""
+    payload가 인코딩 없이 반사되는지 확인. (예: DVWA xss_s 등)"""
     findings = []
     if not endpoint.forms:
         return findings
@@ -221,7 +221,7 @@ def scan_stored_xss(asset: Asset, endpoint: Endpoint, client: httpx.Client) -> l
                 continue
             for payload in STORED_XSS_PAYLOADS:
                 data = {f: (payload if f == field_name else "test") for f in fields}
-                # Submit 버튼 포함 (DVWA는 버튼 없으면 처리 안 함)
+                # Submit 버튼 포함 (일부 앱은 버튼 없으면 처리 안 함)
                 if "btnSign" in fields:
                     data["btnSign"] = "Sign"
                 try:
