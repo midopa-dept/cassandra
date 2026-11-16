@@ -9,6 +9,7 @@ from scanner.sqli import scan_sqli
 from scanner.xss import scan_xss, scan_dom_xss, scan_stored_xss
 from scanner.idor import scan_idor
 from scanner.ssrf import scan_ssrf
+from scanner.file import scan_file
 from scanner.auth import scan_auth_bypass
 from scanner.fuzz import scan_fuzz
 from scanner.cve import scan_cve
@@ -38,6 +39,7 @@ def scan_web(asset: Asset, client: httpx.Client | None = None) -> list[Finding]:
         findings.extend(scan_stored_xss(asset, endpoint, client))
         findings.extend(scan_idor(asset, endpoint, client))
         findings.extend(scan_ssrf(asset, endpoint, client))
+        findings.extend(scan_file(asset, endpoint, client))
         findings.extend(scan_auth_bypass(asset, endpoint, client))
         findings.extend(scan_fuzz(asset, endpoint, client))
 

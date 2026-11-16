@@ -1,6 +1,6 @@
 # BugBounty Bot — 취약점 분석 보고서
 
-**작성일**: 2026-11-12 (6b: DOM XSS + Stored XSS 추가)
+**작성일**: 2026-11-12 (6c: File Upload RCE + Path Traversal 추가)
 **대상**: DVWA (vulnerable/web-dvwa:latest), OWASP Juice Shop (bkimminich/juice-shop:latest, v20.2.0)
 **방법**: scanner findings + **실제 exploit 실측** (payload 주입 → 결과 확인)
 
@@ -10,26 +10,28 @@
 
 | 앱 | findings | **실제 exploit 확인** | 알려진 취약점 중 발견 | 새로운 취약점 |
 |----|----------|----------------------|---------------------|-------------|
-| DVWA | **42** | **9개** (SQLi×3, XSS, **Stored XSS×2**, IDOR, LFI, 명령주입) | **~7/13** | 없음 |
-| Juice Shop | **22** | **5개** (Stored XSS, IDOR, NoSQLi login, Admin Registration, **DOM XSS**) | **~5/20+** | 없음 |
+| DVWA | **43** | **10개** (SQLi×3, XSS, Stored XSS×2, **File Upload RCE**, IDOR, LFI, 명령주입) | **~8/13** | 없음 |
+| Juice Shop | **22** | **5개** (Stored XSS, IDOR, NoSQLi login, Admin Registration, DOM XSS) | **~5/20+** | 없음 |
 
 **결론:**
 1. **새로운 취약점이 아니다** — 두 앱 모두 의도적으로 취약한 학습용 앱(OWASP). 우리가 발견한 것은 **알려진 취약점**이다.
-2. **모두 exploit 가능한 것은 아니다** — findings 64개 중 실제로 exploit을 실측·확인한 것은 **13개**다. 나머지는 신호(heuristic) 단계.
-3. **알려진 취약점을 모두 찾은 것은 아니다** — DVWA는 ~13개 취약점 카테고리 중 **~7개**, Juice Shop은 ~20+ 챌린지 중 **~5개**를 발견했다 (6a: NoSQLi + Admin Reg, 6b: DOM XSS + Stored XSS).
+2. **모두 exploit 가능한 것은 아니다** — findings 65개 중 실제로 exploit을 실측·확인한 것은 **14개**다. 나머지는 신호(heuristic) 단계.
+3. **알려진 취약점을 모두 찾은 것은 아니다** — DVWA는 ~13개 취약점 카테고리 중 **~8개**, Juice Shop은 ~20+ 챌린지 중 **~5개**를 발견했다 (6a: NoSQLi + Admin Reg, 6b: DOM XSS + Stored XSS, 6c: File Upload RCE).
 
 ---
 
 ## 2. DVWA 분석
 
-### 2.1 scanner findings (40개)
+### 2.1 scanner findings (43개)
 
 | 유형 | 수 | 대상 |
 |------|----|------|
 | sqli | 10 | `/sqli/` (boolean), `/brute/` (SQL error) |
 | xss | 19 | `/xss_r/` (reflected: script/onerror/onload) |
+| stored_xss | 2 | `/xss_s/` (txtName, mtxMessage → GET 반사) |
 | idor | 8 | `/sqli/`, `/sqli_blind/` |
 | cve | 3 | Apache HTTP/2 rapid reset |
+| **file_upload** | **1** | **`/vulnerabilities/upload/` .php → `/hackable/uploads/` RCE** |
 
 ### 2.2 실제 exploit 실측 (확인된 것만)
 
@@ -42,19 +44,20 @@
 | 5 | **reflected XSS** | `id=<script>...` | payload가 HTML에 그대로 반사 | ✅ **YES** |
 | 6 | **LFI (로컬 파일 포함)** | `file=../../etc/passwd` | `root:x:0:0:root:...` | ✅ **YES** |
 | 7 | **명령 주입** | `target=127.0.0.1;id` | `uid=33(www-data)` | ✅ **YES** |
+| 8 | **File Upload (RCE)** | `.php` 업로드 → `/hackable/uploads/bb_rce.php` | **200 + marker 출력** (RCE) | ✅ **YES** |
 
-**exploit 가능한 것 (7개)**: boolean SQLi, time-based blind SQLi, length() blind SQLi, IDOR, reflected XSS, LFI, 명령 주입.
+**exploit 가능한 것 (8개)**: boolean SQLi, time-based blind SQLi, length() blind SQLi, IDOR, reflected XSS, LFI, 명령 주입, **File Upload (RCE)**.
 
 ### 2.3 exploit이 안 된 것 / 확인 안 된 것
 
 | 취약점 | 상태 | 이유 |
 |--------|------|------|
 | **UNION-based SQLi** | ⚠️ 부분 | `id=-1 UNION SELECT user,password,...` — DVWA sqli 페이지는 **첫 행만** 표시하고, `AND user='' AND password=''` 조건이 걸려서 UNION 결과가 안 보임. 컬럼 수(8개)를 맞춰야 함. |
-| **XSS Stored** (`/xss_s/`) | ❌ 미발견 | scanner가 reflected만 탐지. stored(댓글 저장)는 미탐지. |
-| **XSS DOM** (`/xss_d/`) | ❌ 미발견 | DOM-based XSS는 JS 실행이 필요 — scanner가 미탐지. |
+| **XSS Stored** (`/xss_s/`) | ✅ | 6b: txtName/mtxMessage → GET 반사 |
+| **XSS DOM** (`/xss_d/`) | ✅ | 6b: main.js sink+source 정적 분석 |
 | **Insecure CAPTCHA** | ❌ 미발견 | CAPTCHA 로직 — scanner가 미탐지. |
 | **Weak Session IDs** | ❌ 미발견 | 세션 ID 예측 — scanner가 미탐지. |
-| **File Upload** | ❌ 미발견 | 파일 업로드 — scanner가 미탐지. |
+| **File Upload** | ✅ | 6c: .php 업로드 → `/hackable/uploads/` RCE |
 | **Insecure Login** | ⚠️ 부분 | brute force SQL error는 발견, 로그인 우회 자체는 미확인. |
 
 ### 2.4 알려진 취약점 대조
@@ -66,18 +69,18 @@ DVWA 프로젝트의 알려진 취약점 카테고리 (~13개):
 | SQL Injection (boolean/union/error) | ✅ | ✅ (boolean, time) |
 | SQL Injection Blind (time) | ✅ | ✅ |
 | XSS Reflected | ✅ | ✅ |
-| XSS Stored | ❌ | — |
-| XSS DOM | ❌ | — |
+| XSS Stored | ✅ | ✅ (6b) |
+| XSS DOM | ✅ | ✅ (6b) |
 | IDOR | ✅ | ✅ |
 | File Inclusion (LFI/RFI) | ✅ | ✅ |
 | Command Injection | ✅ | ✅ |
 | Brute Force | ✅ (SQL error) | ⚠️ |
 | Insecure CAPTCHA | ❌ | — |
 | Weak Session IDs | ❌ | — |
-| File Upload | ❌ | — |
+| File Upload | ✅ | ✅ (6c: RCE) |
 | Insecure Login | ⚠️ | ⚠️ |
 
-**발견률**: ~13개 중 **~7개** (boolean SQLi, blind SQLi, XSS reflected, IDOR, LFI, 명령 주입, brute force). **~6개 미발견** (XSS stored, XSS DOM, CAPTCHA, weak session, file upload, insecure login).
+**발견률**: ~13개 중 **~8개** (boolean SQLi, blind SQLi, XSS reflected, **XSS stored**, **XSS DOM**, IDOR, LFI, 명령 주입, **File Upload**). **~5개 미발견** (CAPTCHA, weak session, insecure login, brute force, union SQLi).
 
 ### 2.5 "어떤 일이 가능한가" (DVWA)
 
@@ -88,17 +91,19 @@ DVWA 프로젝트의 알려진 취약점 카테고리 (~13개):
 - **XSS**: reflected XSS로 사용자 브라우저에서 JS 실행 (세션 탈취, CSRF)
 - **서버 파일 읽기**: LFI로 `/etc/passwd`, `/etc/shadow` (읽기 권한이 있으면)
 - **명령 실행**: 명령 주입으로 `id`, `whoami`, `cat /etc/passwd` 등
+- **RCE (File Upload)**: `.php` 파일 업로드 → `/hackable/uploads/`에 저장 → 웹에서 실행 (원격 코드 실행)
 
 ---
 
 ## 3. Juice Shop 분석
 
-### 3.1 scanner findings (21개)
+### 3.1 scanner findings (22개)
 
 | 유형 | 수 | 대상 |
 |------|----|------|
 | **nosqli** | **1** | **`/rest/user/login` password `{$ne:None}` → 500 (baseline 401)** |
 | **admin_registration** | **1** | **`/api/Users` POST role:admin → 201** |
+| **dom_xss** | **1** | **`main.js` sink(innerHTML, document.write) + source(location.href)** |
 | xss | 2 | `/api/Products/1` PUT name (stored XSS) |
 | api_missing_auth | 3 | `/api/Products`, `/api/Products/1`, `/api/Challenges` |
 | api_no_rate_limit | 3 | `/api/Products`, `/api/Products/1`, `/api/Challenges` |
@@ -113,7 +118,7 @@ DVWA 프로젝트의 알려진 취약점 카테고리 (~13개):
 | 3 | **NoSQLi login** | `POST /rest/user/login` `{"password":{"$ne":null}}` | **500** (baseline 401) — operator가 백엔드 `btoa()`에 도달 | ✅ **신호 확인** |
 | 4 | **Admin Registration** | `POST /api/Users` `{"email":...,"password":...,"role":"admin"}` | **201** + 응답 `"role":"admin"` | ✅ **YES** |
 
-**exploit 가능한 것 (4개)**: Stored XSS, IDOR, **NoSQLi login (신호)**, **Admin Registration**.
+**exploit 가능한 것 (5개)**: Stored XSS, IDOR, **NoSQLi login (신호)**, **Admin Registration**, **DOM XSS**.
 
 > **NoSQLi login 비고**: v20.2.0은 password를 `btoa()`(base64) 인코딩하므로, operator object가 `btoa()`에서 TypeError(500)를 유발 — 완전 우회(200)는 아니지만 **baseline(401)과 다른 500**으로 NoSQLi 공격면이 존재함을 증명. scanner는 이 status code 차이를 `nosqli` finding으로 탐지.
 
@@ -124,7 +129,6 @@ DVWA 프로젝트의 알려진 취약점 카테고리 (~13개):
 | **NoSQLi login** | ✅ | `/rest/user/login`(단수)에 `{$ne:None}` → 500 (baseline 401). operator가 백엔드에 도달함을 증명. |
 | **DOM XSS** | ✅ | `main.js`에서 `innerHTML/outerHTML/document.write` sink + `location.href/document.location` source — 정적 분석으로 탐지 |
 | **SQLi** | ❌ | `PUT /api/Products/1` name에 SQLi payload — 저장되지만 SQL error 안 나옴. |
-| **DOM XSS** | ✅ | `main.js` sink(innerHTML, document.write) + source(location.href) — 정적 분석 |
 | **Admin Registration** | ✅ | `POST /api/Users` role:admin → 201, 응답에 role:admin. |
 | **Login Admin** | ❌ | admin 로그인 — scanner 미탐지. |
 | **Zero Stars** | ❌ | 별점 조작 — scanner 미탐지. |
@@ -174,13 +178,13 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 
 ### 4.2 "모두 exploit 가능한가?"
 
-**아니다.** findings 51개 중 **실제 exploit을 실측·확인한 것은 9개**다.
+**아니다.** findings 65개 중 **실제 exploit을 실측·확인한 것은 14개**다.
 
 | 앱 | findings | exploit 확인 | 비율 |
 |----|----------|-------------|------|
-| DVWA | 40 | 7 | 17.5% |
-| Juice Shop | **21** | **4** | **19.0%** |
-| **합계** | **61** | **11** | **18.0%** |
+| DVWA | **43** | **10** | **23.3%** |
+| Juice Shop | **22** | **5** | **22.7%** |
+| **합계** | **65** | **14** | **21.5%** |
 
 나머지 42개는 **신호(heuristic) 단계** — SQL error, length anomaly, fuzz anomaly 등. exploit으로 확인하려면 추가 작업이 필요하다.
 
@@ -190,14 +194,15 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 
 | 앱 | 알려진 취약점 | 우리가 발견 | 발견률 |
 |----|-------------|-----------|--------|
-| DVWA | ~13개 | ~7개 | **~54%** |
-| Juice Shop | ~20+개 | **~4개** | **~20%** |
+| DVWA | ~13개 | **~8개** | **~62%** |
+| Juice Shop | ~20+개 | **~5개** | **~25%** |
 
 **미발견 취약점의 공통점:**
-- **DOM-based XSS** — ✅ 탐지 (6b: main.js sink+source 정적 분석)
-- **Stored XSS** (DVWA) — ✅ 탐지 (6b: xss_s txtName/mtxMessage → GET 반사)
+- **DOM-based XSS** — ✅ 탐지 (6b: main.js sink+source)
+- **Stored XSS** (DVWA) — ✅ 탐지 (6b: xss_s txtName/mtxMessage)
+- **File Upload** (DVWA) — ✅ 탐지 (6c: .php → RCE)
 - **Login Admin** (Juice Shop) — admin 로그인, scanner가 미탐지
-- **CAPTCHA, Weak Session, File Upload** (DVWA) — 특수 로직, scanner가 미탐지
+- **CAPTCHA, Weak Session** (DVWA) — 특수 로직, scanner가 미탐지
 
 ### 4.4 scanner의 강점과 한계
 
@@ -209,12 +214,12 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 - **IDOR** — 잘 탐지 (두 앱)
 - **NoSQLi** — 잘 탐지 (Juice Shop, operator → 500 신호)
 - **Admin Registration** — 잘 탐지 (Juice Shop, role:admin → 201)
+- **File Upload (RCE)** — ✅ 탐지 (6c: .php → 저장 → 실행)
 - **LFI, 명령 주입** — 잘 탐지 (DVWA)
 
 **한계:**
-- **DOM-based XSS** — 미탐지 (JS 실행 필요)
 - **Login Admin** — admin 로그인 미탐지
-- **CAPTCHA, Weak Session, File Upload** — 특수 로직 미탐지
+- **CAPTCHA, Weak Session** — 특수 로직 미탐지
 - **UNION-based SQLi** — 컬럼 수 불일치로 미확인
 
 ### 4.5 다음 단계 (improvement)
@@ -224,7 +229,8 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 3. ~~**Stored XSS (DVWA)**~~ — ✅ 완료 (6b: xss_s txtName/mtxMessage)
 4. ~~**Admin Registration**~~ — ✅ 완료 (6a) / **Login Admin** — 미탐지
 5. **UNION-based SQLi** — 컬럼 수 자동 탐지 + `id=-1` 사용
-6. ~~**dedicated vuln_type**~~ — ✅ 완료 (6a: nosqli, admin_registration / 6b: dom_xss, stored_xss)
+6. ~~**dedicated vuln_type**~~ — ✅ 완료 (6a: nosqli, admin_registration / 6b: dom_xss, stored_xss / 6c: file_upload, path_traversal)
+7. ~~**File Upload (RCE)**~~ — ✅ 완료 (6c: .php → 저장 → 실행)
 
 ---
 
@@ -235,3 +241,4 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 - `exploit_juice.py` — Juice Shop exploit (NoSQLi, Stored XSS, SQLi, IDOR)
 - `exploit_nosqli.py` — Juice Shop NoSQLi login + Admin Registration 실측 (6a)
 - `scanner/xss.py` — 6b: `scan_dom_xss`(JS 번들 sink+source) + `scan_stored_xss`(POST 저장 → GET 반사)
+- `scanner/file.py` — 6c: `scan_file_upload`(.php 업로드 → 저장/실행 RCE) + `scan_file_download`(path traversal)
