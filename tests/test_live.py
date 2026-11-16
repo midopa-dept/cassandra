@@ -20,6 +20,7 @@ def test_target(name: str, base_url: str, use_login: bool = False):
 
     # 1. Crawl (with authenticated client if login)
     print(f"\n[1] Crawling...")
+    auth_client = None
     if use_login:
         asset_tmp = Asset(base_url=base_url)
         auth_client = get_authenticated_client(asset_tmp)
@@ -44,10 +45,10 @@ def test_target(name: str, base_url: str, use_login: bool = False):
     else:
         print(f"\n[2] No login needed")
 
-    # 3. Scan
+    # 3. Scan (use authenticated client if login)
     print(f"\n[3] Scanning...")
     asset = Asset(base_url=base_url, endpoints=all_endpoints)
-    findings = scan_web(asset)
+    findings = scan_web(asset, client=auth_client)
 
     # 4. Results
     print(f"\n[4] Results: {len(findings)} findings")

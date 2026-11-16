@@ -40,16 +40,19 @@ def scan_sqli(asset: Asset, endpoint: Endpoint, client: httpx.Client) -> list[Fi
     findings = []
     base_url = endpoint.url or asset.base_url
 
-    # Baseline request
-    baseline = _request(client, base_url, endpoint.method, {})
+    # Baseline request (complete form: first param = "1", others = name-as-value)
+    if endpoint.params:
+        baseline = _request(client, base_url, endpoint.method, _build_params(endpoint, endpoint.params[0], "1"))
+    else:
+        baseline = _request(client, base_url, endpoint.method, {})
     if baseline is None:
         return findings
 
-    # 1. Query parameter injection
+    # 1. Query parameter injection (send complete form: target=payload, others=name)
     if endpoint.params:
         for param in endpoint.params:
             for payload, technique in SQLI_PAYLOADS:
-                params = {param: payload}
+                params = _build_params(endpoint, param, payload)
                 resp = _request(client, base_url, endpoint.method, params)
                 if resp is None:
                     continue
@@ -76,7 +79,7 @@ def scan_sqli(asset: Asset, endpoint: Endpoint, client: httpx.Client) -> list[Fi
                         break
 
                 # Check for boolean-based (response length difference)
-                if len(resp.text) > len(baseline.text) * 1.5:
+                if len(resp.text) > len(baseline.text) * 1.05:
                     finding = Finding(
                         asset_id=asset.id,
                         vuln_type="sqli",
@@ -144,6 +147,11 @@ def scan_sqli(asset: Asset, endpoint: Endpoint, client: httpx.Client) -> list[Fi
 
     log.info("sqli: %d findings on %s", len(findings), base_url)
     return findings
+
+
+def _build_params(endpoint: Endpoint, target: str, value: str) -> dict:
+    """완전한 폼 파라미터: target=value, 나머지는 이름(버튼 기본값)."""
+    return {p: (value if p == target else p) for p in endpoint.params}
 
 
 def _extract_path_params(url: str) -> list[str]:

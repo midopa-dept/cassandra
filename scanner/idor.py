@@ -27,14 +27,14 @@ def scan_idor(asset: Asset, endpoint: Endpoint, client: httpx.Client) -> list[Fi
         return findings
 
     for param in id_params:
-        # Baseline: original request
-        baseline = _request(client, base_url, endpoint.method, {param: "1"})
+        # Baseline: original request (complete form: target="1", others=name)
+        baseline = _request(client, base_url, endpoint.method, {p: ("1" if p == param else p) for p in endpoint.params})
         if baseline is None or baseline.status_code != 200:
             continue
 
-        # Try different IDs
+        # Try different IDs (complete form: target=test_id, others=name)
         for test_id in IDOR_IDS[1:]:
-            params = {param: str(test_id)}
+            params = {p: (str(test_id) if p == param else p) for p in endpoint.params}
             resp = _request(client, base_url, endpoint.method, params)
             if resp is None:
                 continue

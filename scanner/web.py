@@ -16,14 +16,20 @@ from scanner.cve import scan_cve
 log = get_logger("scanner.web")
 
 
-def scan_web(asset: Asset) -> list[Finding]:
-    """웹 앱 스캔: asset.endpoints 를 순회하며 각 scanner 실행."""
+def scan_web(asset: Asset, client: httpx.Client | None = None) -> list[Finding]:
+    """웹 앱 스캔: asset.endpoints 를 순회하며 각 scanner 실행.
+
+    client: 인증 클라이언트 (login 필요 앱). 없으면 비인증 클라이언트 생성.
+    """
     findings = []
     if not asset.base_url:
         log.warning("scan_web: no base_url for asset %s", asset.id)
         return findings
 
-    client = httpx.Client(base_url=asset.base_url, follow_redirects=True)
+    close_client = False
+    if client is None:
+        client = httpx.Client(base_url=asset.base_url, follow_redirects=True)
+        close_client = True
 
     for endpoint in asset.endpoints:
         # 각 scanner 실행
@@ -37,6 +43,7 @@ def scan_web(asset: Asset) -> list[Finding]:
     # CVE 스캔 (endpoint 없이 asset 단위)
     findings.extend(scan_cve(asset, client))
 
-    client.close()
+    if close_client:
+        client.close()
     log.info("scan_web: %d total findings on %s", len(findings), asset.base_url)
     return findings

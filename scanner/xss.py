@@ -36,7 +36,7 @@ def scan_xss(asset: Asset, endpoint: Endpoint, client: httpx.Client) -> list[Fin
 
     for param in endpoint.params:
         for payload, technique in XSS_PAYLOADS:
-            params = {param: payload}
+            params = {p: (payload if p == param else p) for p in endpoint.params}
             resp = _request(client, base_url, endpoint.method, params)
             if resp is None:
                 continue
