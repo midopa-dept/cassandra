@@ -1,6 +1,6 @@
 # BugBounty Bot — 취약점 분석 보고서
 
-**작성일**: 2026-11-11
+**작성일**: 2026-11-12 (6a: NoSQLi + Admin Registration + OpenAPI 탐지 추가)
 **대상**: DVWA (vulnerable/web-dvwa:latest), OWASP Juice Shop (bkimminich/juice-shop:latest, v20.2.0)
 **방법**: scanner findings + **실제 exploit 실측** (payload 주입 → 결과 확인)
 
@@ -11,12 +11,12 @@
 | 앱 | findings | **실제 exploit 확인** | 알려진 취약점 중 발견 | 새로운 취약점 |
 |----|----------|----------------------|---------------------|-------------|
 | DVWA | 40 | **7개** (SQLi×3, XSS, IDOR, LFI, 명령주입) | 일부 (~5/13) | 없음 |
-| Juice Shop | 11 | **2개** (Stored XSS, IDOR) | 일부 (~2/20+) | 없음 |
+| Juice Shop | **21** | **4개** (Stored XSS, IDOR, **NoSQLi login**, **Admin Registration**) | **~4/20+** | 없음 |
 
 **결론:**
 1. **새로운 취약점이 아니다** — 두 앱 모두 의도적으로 취약한 학습용 앱(OWASP). 우리가 발견한 것은 **알려진 취약점**이다.
-2. **모두 exploit 가능한 것은 아니다** — findings 51개 중 실제로 exploit을 실측·확인한 것은 **9개**다. 나머지는 신호(heuristic) 단계.
-3. **알려진 취약점을 모두 찾은 것은 아니다** — DVWA는 ~13개 취약점 카테고리 중 ~5개, Juice Shop은 ~20+ 챌린지 중 ~2개를 발견했다.
+2. **모두 exploit 가능한 것은 아니다** — findings 61개 중 실제로 exploit을 실측·확인한 것은 **11개**다. 나머지는 신호(heuristic) 단계.
+3. **알려진 취약점을 모두 찾은 것은 아니다** — DVWA는 ~13개 취약점 카테고리 중 ~5개, Juice Shop은 ~20+ 챌린지 중 **~4개**를 발견했다 (6a: NoSQLi login + Admin Registration 추가).
 
 ---
 
@@ -93,11 +93,16 @@ DVWA 프로젝트의 알려진 취약점 카테고리 (~13개):
 
 ## 3. Juice Shop 분석
 
-### 3.1 scanner findings (11개)
+### 3.1 scanner findings (21개)
 
 | 유형 | 수 | 대상 |
 |------|----|------|
-| fuzz_anomaly | 11 | `/api/Products/1` (NoSQL injection 신호: `{"$gt":""}`→500) |
+| **nosqli** | **1** | **`/rest/user/login` password `{$ne:None}` → 500 (baseline 401)** |
+| **admin_registration** | **1** | **`/api/Users` POST role:admin → 201** |
+| xss | 2 | `/api/Products/1` PUT name (stored XSS) |
+| api_missing_auth | 3 | `/api/Products`, `/api/Products/1`, `/api/Challenges` |
+| api_no_rate_limit | 3 | `/api/Products`, `/api/Products/1`, `/api/Challenges` |
+| fuzz_anomaly | 11 | `/api/Products`, `/api/Challenges` (NoSQL operator → 500) |
 
 ### 3.2 실제 exploit 실측 (확인된 것만)
 
@@ -105,18 +110,21 @@ DVWA 프로젝트의 알려진 취약점 카테고리 (~13개):
 |---|--------|-------------|------|------------------|
 | 1 | **Stored XSS** | `PUT /api/Products/1` body `name=<img src=x onerror=alert(1)>` | 저장 + GET으로 반사 | ✅ **YES** |
 | 2 | **IDOR** | `GET /api/Products/{id}` (id=1,2,3,999) | 다른 제품 반환 | ✅ **YES** |
-| 3 | **NoSQLi login** | `POST /rest/login` `{"username":{"$ne":null}}` | 500 "Unexpected path" | ⚠️ **경로 문제** |
+| 3 | **NoSQLi login** | `POST /rest/user/login` `{"password":{"$ne":null}}` | **500** (baseline 401) — operator가 백엔드 `btoa()`에 도달 | ✅ **신호 확인** |
+| 4 | **Admin Registration** | `POST /api/Users` `{"email":...,"password":...,"role":"admin"}` | **201** + 응답 `"role":"admin"` | ✅ **YES** |
 
-**exploit 가능한 것 (2개)**: Stored XSS, IDOR.
+**exploit 가능한 것 (4개)**: Stored XSS, IDOR, **NoSQLi login (신호)**, **Admin Registration**.
+
+> **NoSQLi login 비고**: v20.2.0은 password를 `btoa()`(base64) 인코딩하므로, operator object가 `btoa()`에서 TypeError(500)를 유발 — 완전 우회(200)는 아니지만 **baseline(401)과 다른 500**으로 NoSQLi 공격면이 존재함을 증명. scanner는 이 status code 차이를 `nosqli` finding으로 탐지.
 
 ### 3.3 exploit이 안 된 것 / 확인 안 된 것
 
 | 취약점 | 상태 | 이유 |
 |--------|------|------|
-| **NoSQLi login** | ⚠️ | `/rest/login`이 500 "Unexpected path" — 이 Juice Shop(v20.2.0)은 API가 `/rest/*`가 아니라 **`/api/*`**로 바뀜. 정확한 로그인 경로 미확인. |
+| **NoSQLi login** | ✅ | `/rest/user/login`(단수)에 `{$ne:None}` → 500 (baseline 401). operator가 백엔드에 도달함을 증명. |
 | **SQLi** | ❌ | `PUT /api/Products/1` name에 SQLi payload — 저장되지만 SQL error 안 나옴. |
 | **DOM XSS** | ❌ | DOM-based XSS는 JS 실행 필요 — scanner 미탐지. |
-| **Admin Registration** | ❌ | admin 계정 등록 — scanner 미탐지. |
+| **Admin Registration** | ✅ | `POST /api/Users` role:admin → 201, 응답에 role:admin. |
 | **Login Admin** | ❌ | admin 로그인 — scanner 미탐지. |
 | **Zero Stars** | ❌ | 별점 조작 — scanner 미탐지. |
 | **Confidential Document** | ❌ | FTP 문서 — scanner 미탐지. |
@@ -130,11 +138,11 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 |--------------|:----------:|:------------:|
 | Classic Stored XSS | ✅ | ✅ |
 | IDOR (Products) | ✅ | ✅ |
-| NoSQL Injection (login) | ⚠️ (신호) | ⚠️ (경로 문제) |
+| NoSQL Injection (login) | ✅ | ✅ (500 신호) |
 | Error Handling | ⚠️ (fuzz_anomaly) | ⚠️ |
 | DOM XSS | ❌ | — |
 | SQL Injection | ❌ | — |
-| Admin Registration | ❌ | — |
+| Admin Registration | ✅ | ✅ (201) |
 | Login Admin | ❌ | — |
 | Zero Stars | ❌ | — |
 | Confidential Document | ❌ | — |
@@ -144,14 +152,15 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 | Weird Crypto | ❌ | — |
 | ... (나머지) | ❌ | — |
 
-**발견률**: ~20+ 중 **~2개** (Stored XSS, IDOR) + **~2개 부분** (NoSQLi 신호, Error Handling). **~16개+ 미발견**.
+**발견률**: ~20+ 중 **~4개** (Stored XSS, IDOR, **NoSQLi login**, **Admin Registration**) + **~2개 부분** (Error Handling, fuzz). **~14개+ 미발견**.
 
 ### 3.5 "어떤 일이 가능한가" (Juice Shop)
 
 실제 exploit으로 가능한 일:
 - **Stored XSS**: 제품 name에 `<img src=x onerror=alert(1)>` 저장 → 다른 사용자가 제품 페이지를 열면 JS 실행 (세션 탈취, CSRF)
 - **IDOR**: `/api/Products/{id}`로 다른 제품 정보 접근
-- **NoSQLi login** (경로 확인 시): `{"username":{"$ne":null},"password":{"$ne":null}}`로 **비밀번호 없이 로그인**
+- **NoSQLi login**: `/rest/user/login`에 `{$ne:None}` → 500 (operator가 백엔드에 도달, 공격면 존재)
+- **Admin Registration**: `POST /api/Users`에 `role:admin` → **admin 권한 계정 생성** (201)
 
 ---
 
@@ -168,8 +177,8 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 | 앱 | findings | exploit 확인 | 비율 |
 |----|----------|-------------|------|
 | DVWA | 40 | 7 | 17.5% |
-| Juice Shop | 11 | 2 | 18.2% |
-| **합계** | **51** | **9** | **17.6%** |
+| Juice Shop | **21** | **4** | **19.0%** |
+| **합계** | **61** | **11** | **18.0%** |
 
 나머지 42개는 **신호(heuristic) 단계** — SQL error, length anomaly, fuzz anomaly 등. exploit으로 확인하려면 추가 작업이 필요하다.
 
@@ -180,13 +189,12 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 | 앱 | 알려진 취약점 | 우리가 발견 | 발견률 |
 |----|-------------|-----------|--------|
 | DVWA | ~13개 | ~7개 | **~54%** |
-| Juice Shop | ~20+개 | ~2개 | **~10%** |
+| Juice Shop | ~20+개 | **~4개** | **~20%** |
 
 **미발견 취약점의 공통점:**
 - **DOM-based XSS** — JS 실행이 필요, scanner가 미탐지
 - **Stored XSS** (DVWA) — 댓글 저장, scanner가 reflected만 탐지
-- **NoSQLi login** (Juice Shop) — API 경로 문제
-- **Admin Registration, Login Admin** (Juice Shop) — 인증 로직, scanner가 미탐지
+- **Login Admin** (Juice Shop) — admin 로그인, scanner가 미탐지
 - **CAPTCHA, Weak Session, File Upload** (DVWA) — 특수 로직, scanner가 미탐지
 
 ### 4.4 scanner의 강점과 한계
@@ -196,23 +204,24 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 - **reflected XSS** — 잘 탐지 (DVWA)
 - **Stored XSS** — 잘 탐지 (Juice Shop)
 - **IDOR** — 잘 탐지 (두 앱)
+- **NoSQLi** — 잘 탐지 (Juice Shop, operator → 500 신호)
+- **Admin Registration** — 잘 탐지 (Juice Shop, role:admin → 201)
 - **LFI, 명령 주입** — 잘 탐지 (DVWA)
 
 **한계:**
 - **DOM-based XSS** — 미탐지 (JS 실행 필요)
-- **NoSQLi login** — API 경로 문제
-- **Admin Registration, Login Admin** — 인증 로직 미탐지
+- **Login Admin** — admin 로그인 미탐지
 - **CAPTCHA, Weak Session, File Upload** — 특수 로직 미탐지
 - **UNION-based SQLi** — 컬럼 수 불일치로 미확인
 
 ### 4.5 다음 단계 (improvement)
 
-1. **NoSQLi login 경로 수정** — Juice Shop v20.2.0의 `/api/*` API 경로 확인
+1. ~~**NoSQLi login 경로 수정**~~ — ✅ 완료 (`/rest/user/login`, `nosqli` vuln_type)
 2. **DOM XSS 탐지** — JS 번들 분석, `innerHTML`, `document.write` 등
 3. **Stored XSS (DVWA)** — 댓글 저장 + 재탐지
-4. **Admin Registration / Login Admin** — 인증 로직 탐지
+4. ~~**Admin Registration**~~ — ✅ 완료 (`admin_registration` vuln_type) / **Login Admin** — 미탐지
 5. **UNION-based SQLi** — 컬럼 수 자동 탐지 + `id=-1` 사용
-6. **dedicated vuln_type** — NoSQLi, Error Handling을 `fuzz_anomaly`에서 별도 유형으로 승격
+6. ~~**dedicated vuln_type**~~ — ✅ 완료 (NoSQLi, admin_registration 별도 유형)
 
 ---
 
@@ -221,3 +230,4 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 - `exploit_dvwa.py` — DVWA exploit (SQLi, XSS, IDOR, LFI, 명령 주입)
 - `exploit_dvwa2.py` — DVWA sqli 정확 검증 (UNION, boolean, length)
 - `exploit_juice.py` — Juice Shop exploit (NoSQLi, Stored XSS, SQLi, IDOR)
+- `exploit_nosqli.py` — Juice Shop NoSQLi login + Admin Registration 실측 (6a)

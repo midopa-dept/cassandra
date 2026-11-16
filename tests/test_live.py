@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.models import Asset
 from asset.crawl import crawl, crawl_api
 from scanner.web import scan_web
+from scanner.api import scan_api
 from scanner.login import login, get_authenticated_client
 from core.logger import setup_logger
 
@@ -49,6 +50,9 @@ def test_target(name: str, base_url: str, use_login: bool = False):
     print(f"\n[3] Scanning...")
     asset = Asset(base_url=base_url, endpoints=all_endpoints)
     findings = scan_web(asset, client=auth_client)
+    # API scan (NoSQLi, admin registration, OpenAPI, REST body)
+    api_findings = scan_api(asset)
+    findings.extend(api_findings)
 
     # 4. Results
     print(f"\n[4] Results: {len(findings)} findings")
