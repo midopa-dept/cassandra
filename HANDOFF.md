@@ -1,7 +1,7 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-11
-**현재 단계**: scanner 분할 완료, fuzz/cve/login 작성 대기
+**현재 단계**: scanner 분할 완료, 실전 테스트 대기
 
 ## 완료된 작업
 
@@ -65,7 +65,7 @@
 2. ~~각 파일 2~4KB 로 `write_file` 사용~~ ✓
 3. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ ✓
 4. ~~`scanner/cve.py` (NVD + Wappalyzer)~~ ✓
-5. `scanner/login.py` (DVWA 로그인)
+5. ~~`scanner/login.py` (DVWA 로그인)~~ ✓
 6. 실전 테스트: DVWA + Juice Shop 에서 실제 findings
 7. HANDOFF.md 업데이트
 
@@ -117,7 +117,7 @@ bugbounty/
 │   ├── auth.py         # Auth bypass scanner (98줄)
 │   ├── fuzz.py         # Fuzzing/Anomaly scanner (144줄)
 │   ├── cve.py          # CVE scanner (121줄)
-│   └── login.py        # 미작성 (DVWA 로그인)
+│   └── login.py        # Login/auth handler (148줄)
 ├── triage/
 │   ├── __init__.py
 │   ├── llm.py
@@ -177,5 +177,5 @@ bugbounty/
 5. 각 scanner (sqli, xss, idor, ssrf, auth) 가 `base_url + endpoint + param` 으로 실제 HTTP 요청 (완료)
 6. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ (완료)
 7. ~~`scanner/cve.py` — CVE 기반 (NVD + Wappalyzer)~~ (완료)
-8. `scanner/login.py` — 인증 처리 (DVWA 등)
+8. ~~`scanner/login.py` — 인증 처리 (DVWA 등)~~ (완료)
 9. 실전 테스트: DVWA + Juice Shop 에서 실제 findings
