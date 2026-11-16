@@ -134,7 +134,7 @@ bugbounty/
 
 ## 7. 환경
 
-- **colima**: Running — DVWA `:8081`, Juice Shop `:3000` (docker.sock: `/Users/midopa/.colima/default/docker.sock`)
+- **colima**: **Stopped** (2026-11-12) — 시작: `colima start` → 컨테이너: `DOCKER_HOST=unix:///Users/midopa/.colima/default/docker.sock docker start demo-dvwa-1 demo-juice-shop-1` (DVWA `:8081`, Juice Shop `:3000`)
 - **Python**: `.venv` (uv, 3.13) — `python3` 또는 `.venv/bin/python`
 - **DVWA**: MySQL (app/vulnerables), admin/password. 로그인 실패 시 자동 DB reset
 - **Juice Shop**: v20.2.0, MongoDB, API `/api/*`
