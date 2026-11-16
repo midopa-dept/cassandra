@@ -33,6 +33,7 @@ def main():
     p_exploit.add_argument("--method", default=None, help="HTTP method override")
     p_exploit.add_argument("--body", default=None, help="Request body override")
     p_exploit.add_argument("--header", action="append", help="Extra header (Key: Value), repeatable")
+    p_exploit.add_argument("--compare-with", default=None, help="Baseline URL for diff comparison")
     p_exploit.add_argument("--json", action="store_true", help="Output as JSON (default)")
     p_exploit.add_argument("--login-url", default=None, help="Login form URL")
     p_exploit.add_argument("--login-user", default=None, help="Login username")
@@ -109,6 +110,7 @@ def main():
             method=args.method,
             body=args.body,
             headers=headers,
+            compare_with=args.compare_with,
         )
         print(json.dumps(result, indent=2, ensure_ascii=False))
 

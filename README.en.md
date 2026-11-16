@@ -217,7 +217,6 @@ python tests/test_live.py         # DVWA + Juice Shop live
 - [`docs/walkthrough.md`](docs/walkthrough.md) — code explanation ("why built this way")
 - [`docs/agent_prompts.md`](docs/agent_prompts.md) — prompts the LLM agent uses when calling Cassandra
 - [`PLAN.md`](PLAN.md) — full plan (North Star, stages)
-- [`HANDOFF.md`](HANDOFF.md) — current state · progress · next steps
 
 ## License
 

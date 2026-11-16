@@ -217,7 +217,6 @@ python tests/test_live.py         # DVWA + Juice Shop 실전
 - [`docs/walkthrough.md`](docs/walkthrough.md) — 코드 설명 ("왜 이렇게 만들었나")
 - [`docs/agent_prompts.md`](docs/agent_prompts.md) — LLM 에이전트가 Cassandra를 부를 때 쓰는 프롬프트
 - [`PLAN.md`](PLAN.md) — 전체 계획 (North Star, 단계)
-- [`HANDOFF.md`](HANDOFF.md) — 현재 상태·진행·다음 단계
 
 ## License
 
