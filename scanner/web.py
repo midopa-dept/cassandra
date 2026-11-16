@@ -13,6 +13,7 @@ from scanner.file import scan_file
 from scanner.auth import scan_auth_bypass
 from scanner.fuzz import scan_fuzz
 from scanner.cve import scan_cve
+from scanner.session import scan_session
 
 log = get_logger("scanner.web")
 
@@ -48,6 +49,9 @@ def scan_web(asset: Asset, client: httpx.Client | None = None) -> list[Finding]:
 
     # CVE 스캔 (endpoint 없이 asset 단위)
     findings.extend(scan_cve(asset, client))
+
+    # 6d: 인증/세션 (weak_session, captcha, password_reset) — asset 단위
+    findings.extend(scan_session(asset, client))
 
     if close_client:
         client.close()

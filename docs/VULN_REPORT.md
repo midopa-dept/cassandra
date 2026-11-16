@@ -1,6 +1,6 @@
 # BugBounty Bot — 취약점 분석 보고서
 
-**작성일**: 2026-11-12 (6c: File Upload RCE + Path Traversal 추가)
+**작성일**: 2026-11-14 (6d: Weak Session + Insecure CAPTCHA 추가)
 **대상**: DVWA (vulnerable/web-dvwa:latest), OWASP Juice Shop (bkimminich/juice-shop:latest, v20.2.0)
 **방법**: scanner findings + **실제 exploit 실측** (payload 주입 → 결과 확인)
 
@@ -10,19 +10,19 @@
 
 | 앱 | findings | **실제 exploit 확인** | 알려진 취약점 중 발견 | 새로운 취약점 |
 |----|----------|----------------------|---------------------|-------------|
-| DVWA | **43** | **10개** (SQLi×3, XSS, Stored XSS×2, **File Upload RCE**, IDOR, LFI, 명령주입) | **~8/13** | 없음 |
+| DVWA | **45** | **12개** (SQLi×3, XSS, Stored XSS×2, **File Upload RCE**, IDOR, LFI, 명령주입, **Weak Session**, **Insecure CAPTCHA**) | **~10/13** | 없음 |
 | Juice Shop | **22** | **5개** (Stored XSS, IDOR, NoSQLi login, Admin Registration, DOM XSS) | **~5/20+** | 없음 |
 
 **결론:**
 1. **새로운 취약점이 아니다** — 두 앱 모두 의도적으로 취약한 학습용 앱(OWASP). 우리가 발견한 것은 **알려진 취약점**이다.
 2. **모두 exploit 가능한 것은 아니다** — findings 65개 중 실제로 exploit을 실측·확인한 것은 **14개**다. 나머지는 신호(heuristic) 단계.
-3. **알려진 취약점을 모두 찾은 것은 아니다** — DVWA는 ~13개 취약점 카테고리 중 **~8개**, Juice Shop은 ~20+ 챌린지 중 **~5개**를 발견했다 (6a: NoSQLi + Admin Reg, 6b: DOM XSS + Stored XSS, 6c: File Upload RCE).
+3. **알려진 취약점을 모두 찾은 것은 아니다** — DVWA는 ~13개 취약점 카테고리 중 **~10개**, Juice Shop은 ~20+ 챌린지 중 **~5개**를 발견했다 (6a: NoSQLi + Admin Reg, 6b: DOM XSS + Stored XSS, 6c: File Upload RCE, **6d: Weak Session + Insecure CAPTCHA**).
 
 ---
 
 ## 2. DVWA 분석
 
-### 2.1 scanner findings (43개)
+### 2.1 scanner findings (45개)
 
 | 유형 | 수 | 대상 |
 |------|----|------|
@@ -32,6 +32,8 @@
 | idor | 8 | `/sqli/`, `/sqli_blind/` |
 | cve | 3 | Apache HTTP/2 rapid reset |
 | **file_upload** | **1** | **`/vulnerabilities/upload/` .php → `/hackable/uploads/` RCE** |
+| **weak_session** | **1** | **`/vulnerabilities/weak_id/` `dvwaSession` 재생성 → 순차(1,2,3,4)·저엔트로피·짧음** |
+| **captcha** | **1** | **`/vulnerabilities/captcha/` reCAPTCHA sitekey 빈 + key missing + 이미지 재사용** |
 
 ### 2.2 실제 exploit 실측 (확인된 것만)
 
@@ -45,8 +47,10 @@
 | 6 | **LFI (로컬 파일 포함)** | `file=../../etc/passwd` | `root:x:0:0:root:...` | ✅ **YES** |
 | 7 | **명령 주입** | `target=127.0.0.1;id` | `uid=33(www-data)` | ✅ **YES** |
 | 8 | **File Upload (RCE)** | `.php` 업로드 → `/hackable/uploads/bb_rce.php` | **200 + marker 출력** (RCE) | ✅ **YES** |
+| 9 | **Weak Session IDs** | `/vulnerabilities/weak_id/` Generate POST 반복 | `dvwaSession=1,2,3,4` **순차 발급** (avg delta 1.0, entropy 0.00) | ✅ **YES** |
+| 10 | **Insecure CAPTCHA** | `/vulnerabilities/captcha/` | reCAPTCHA `data-sitekey=''` + "key missing" + 이미지 재사용 → **CAPTCHA 비활성** | ✅ **YES** |
 
-**exploit 가능한 것 (8개)**: boolean SQLi, time-based blind SQLi, length() blind SQLi, IDOR, reflected XSS, LFI, 명령 주입, **File Upload (RCE)**.
+**exploit 가능한 것 (10개)**: boolean SQLi, time-based blind SQLi, length() blind SQLi, IDOR, reflected XSS, LFI, 명령 주입, **File Upload (RCE)**, **Weak Session IDs**, **Insecure CAPTCHA**.
 
 ### 2.3 exploit이 안 된 것 / 확인 안 된 것
 
@@ -55,8 +59,8 @@
 | **UNION-based SQLi** | ⚠️ 부분 | `id=-1 UNION SELECT user,password,...` — DVWA sqli 페이지는 **첫 행만** 표시하고, `AND user='' AND password=''` 조건이 걸려서 UNION 결과가 안 보임. 컬럼 수(8개)를 맞춰야 함. |
 | **XSS Stored** (`/xss_s/`) | ✅ | 6b: txtName/mtxMessage → GET 반사 |
 | **XSS DOM** (`/xss_d/`) | ✅ | 6b: main.js sink+source 정적 분석 |
-| **Insecure CAPTCHA** | ❌ 미발견 | CAPTCHA 로직 — scanner가 미탐지. |
-| **Weak Session IDs** | ❌ 미발견 | 세션 ID 예측 — scanner가 미탐지. |
+| **Insecure CAPTCHA** | ✅ | 6d: reCAPTCHA sitekey 빈 + "key missing" + 이미지 재사용 → 우회 가능 |
+| **Weak Session IDs** | ✅ | 6d: `dvwaSession` cookie 재생성 → 순차(1,2,3,4)·저엔트로피·짧음 |
 | **File Upload** | ✅ | 6c: .php 업로드 → `/hackable/uploads/` RCE |
 | **Insecure Login** | ⚠️ 부분 | brute force SQL error는 발견, 로그인 우회 자체는 미확인. |
 
@@ -75,12 +79,12 @@ DVWA 프로젝트의 알려진 취약점 카테고리 (~13개):
 | File Inclusion (LFI/RFI) | ✅ | ✅ |
 | Command Injection | ✅ | ✅ |
 | Brute Force | ✅ (SQL error) | ⚠️ |
-| Insecure CAPTCHA | ❌ | — |
-| Weak Session IDs | ❌ | — |
+| Insecure CAPTCHA | ✅ | ✅ (6d: sitekey 빈 + key missing) |
+| Weak Session IDs | ✅ | ✅ (6d: dvwaSession 순차) |
 | File Upload | ✅ | ✅ (6c: RCE) |
 | Insecure Login | ⚠️ | ⚠️ |
 
-**발견률**: ~13개 중 **~8개** (boolean SQLi, blind SQLi, XSS reflected, **XSS stored**, **XSS DOM**, IDOR, LFI, 명령 주입, **File Upload**). **~5개 미발견** (CAPTCHA, weak session, insecure login, brute force, union SQLi).
+**발견률**: ~13개 중 **~10개** (boolean SQLi, blind SQLi, XSS reflected, **XSS stored**, **XSS DOM**, IDOR, LFI, 명령 주입, **File Upload**, **Weak Session**, **Insecure CAPTCHA**). **~3개 미발견** (insecure login, brute force, union SQLi).
 
 ### 2.5 "어떤 일이 가능한가" (DVWA)
 
@@ -92,6 +96,8 @@ DVWA 프로젝트의 알려진 취약점 카테고리 (~13개):
 - **서버 파일 읽기**: LFI로 `/etc/passwd`, `/etc/shadow` (읽기 권한이 있으면)
 - **명령 실행**: 명령 주입으로 `id`, `whoami`, `cat /etc/passwd` 등
 - **RCE (File Upload)**: `.php` 파일 업로드 → `/hackable/uploads/`에 저장 → 웹에서 실행 (원격 코드 실행)
+- **세션 예측 (Weak Session)**: `dvwaSession`이 순차(1,2,3,4)로 발급 → 다음 세션 ID 예측 → 타인 세션 하이재킹
+- **CAPTCHA 우회 (Insecure CAPTCHA)**: reCAPTCHA 비활성(sitekey 빈) → 비밀번호 변경/로그인 폼에 CAPTCHA 없이 직접 제출
 
 ---
 

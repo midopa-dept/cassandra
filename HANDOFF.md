@@ -1,8 +1,8 @@
 # BugBounty Bot — Handoff
 
-**마지막 업데이트**: 2026-11-12
-**현재 단계**: **단계 6 (알려진 취약점 커버리지)** — **6a + 6b + 6c 완료** → **6d(인증/세션) 대기**
-**현재 블록**: 6d — Weak Session, CAPTCHA, Password Reset
+**마지막 업데이트**: 2026-11-14
+**현재 단계**: **단계 6 (알려진 취약점 커버리지)** — **6a + 6b + 6c + 6d 완료** → **6e(로직/인프라) 대기**
+**현재 블록**: 6e — Race Condition, Payment Bypass, DNS/TLS
 
 ---
 
@@ -44,14 +44,31 @@
 | **6a. API/NoSQL** | NoSQLi login, Admin Registration, Login Admin | OpenAPI/Swagger 자동 탐지 → endpoint·method·body schema 자동 추출. NoSQL operator(`$ne`/`$gt`/`$regex`) + 200/201 판별 | ✅ **완료** (nosqli + admin_registration + openapi_exposed) |
 | **6b. XSS 확장** | DOM XSS, Stored XSS(DVWA) | DOM: JS 번들에서 `innerHTML`/`document.write`/`location.hash` sink 탐지. Stored: body에 XSS payload → GET 반사 확인 | ✅ **완료** (dom_xss + stored_xss) |
 | **6c. 파일/업로드** | File Upload, File Download | multipart POST + 확장자/Content-Type 변형, path traversal(`../`) | ✅ **완료** (file_upload RCE + path_traversal) |
-| **6d. 인증/세션** | Weak Session, CAPTCHA, Password Reset | cookie entropy/만료 분석, CAPTCHA OCR+우회, reset token 예측/재사용 | ⬜ |
+| **6d. 인증/세션** | Weak Session, CAPTCHA, Password Reset | cookie 재생성→entropy/순차성/길이 분석, CAPTCHA sitekey/이미지 재사용, reset token 예측 | ✅ **완료** (weak_session + captcha; password_reset은 email 기반이라 토큰 미추출) |
 | **6e. 로직/인프라** | Race Condition, Payment Bypass, DNS/TLS | 동시 요청+결과 대조, 가격/수량 변형, DNS misconfig/TLS weak cipher/subdomain takeover | ⬜ |
 
 **완료 기준**: DVWA 13/13, Juice Shop 20/20 (VULN_REPORT.md 측정).
 
 ---
 
-## 3. 완료된 블록: 6c (파일/업로드) — 결과 (2026-11-12)
+## 3. 완료된 블록: 6d (인증/세션) — 결과 (2026-11-14)
+
+**목표**: Weak Session, CAPTCHA, Password Reset 자동 발견.
+
+**결과**:
+- **Weak Session IDs**: ✅ DVWA `vulnerabilities/weak_id/` — `dvwaSession` cookie가 Generate POST마다 **순차(1,2,3,4)**로 재생성. scanner는 엔드포인트 반복 요청→Set-Cookie 수집→재생성되는 cookie의 **순차성/엔트로피/길이** 분석. `weak_session` finding 1개 (**medium**).
+- **Insecure CAPTCHA**: ✅ DVWA `vulnerabilities/captcha/` — reCAPTCHA `data-sitekey=''`(빈) + "key missing" 경고 + **이미지 재사용**(같은 session에서 동일 바이트) → CAPTCHA 비활성. `captcha` finding 1개 (**high**).
+- **Password Reset**: ⚠️ Juice Shop은 email 기반(reset 토큰을 HTTP 응답에 안 줌)이라 토큰 미추출 → finding 없음(오탐 방지). scanner는 reset/forgot endpoint 탐지→토큰 추출→단순성/엔트로피 분석 로직은 갖춤.
+
+**새 파일**: `scanner/session.py` (scan_weak_session, scan_captcha, scan_password_reset, scan_session). `scanner/web.py`에 asset-level 통합.
+
+**발견률**: DVWA ~8/13 → **~10/13** (weak_session + captcha 추가). Juice Shop ~5/20+ (변화 없음, password_reset은 email 기반).
+
+**일반화**: 특정 cookie 이름/경로 하드코딩 없음. Set-Cookie 재생성 패턴 + sitekey/이미지 재사용 신호로 판별. known session path(weak_id 등)를 candidate 우선으로 probe.
+
+---
+
+## 4. 완료된 블록: 6c (파일/업로드) — 결과 (2026-11-12)
 
 **목표**: File Upload, File Download, path traversal 자동 발견.
 
