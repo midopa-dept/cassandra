@@ -176,7 +176,11 @@ class BugBountyBot:
             return
 
         try:
-            client = HackerOneClient(self.config.hackerone.api_key)
+            client = HackerOneClient(
+                self.config.hackerone.api_key,
+                session_id=self.config.hackerone.session_id,
+                csrf_token=self.config.hackerone.csrf_token,
+            )
             report_id = client.create_report(report, report.program)
             if report_id:
                 self.db.update_report_status(report.id, "submitted", hackerone_id=report_id)

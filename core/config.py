@@ -9,11 +9,24 @@ from dotenv import load_dotenv
 @dataclass
 class HackerOneConfig:
     api_key_env: str = "H1_API_KEY"
+    username_env: str = "H1_USERNAME"
     programs: list[str] = field(default_factory=list)
 
     @property
     def api_key(self) -> str:
         return os.environ.get(self.api_key_env, "")
+
+    @property
+    def username(self) -> str:
+        return os.environ.get(self.username_env, "")
+
+    @property
+    def session_id(self) -> str:
+        return os.environ.get("H1_SESSION_ID", "")
+
+    @property
+    def csrf_token(self) -> str:
+        return os.environ.get("H1_CSRF_TOKEN", "")
 
 
 @dataclass
