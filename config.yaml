@@ -1,10 +1,5 @@
-# BugBounty Bot — 실전 테스트 설정 (DVWA + Juice Shop)
-
-hackerone:
-  api_key_env: H1_API_KEY
-  programs:
-    - "dvwa"
-    - "juice-shop"
+# Cassandra — 설정
+# core/config.py가 실제로 읽는 섹션: scan, db_path
 
 scan:
   concurrent: 5
@@ -13,27 +8,41 @@ scan:
   max_pages: 50
   follow_redirects: true
 
-llm:
-  provider: mock  # mock (내가 판단), openai, anthropic
-  model: gpt-4o
-  temperature: 0.3
-  max_tokens: 2000
+db_path: "cassandra.db"
 
-scheduler:
-  ct_min: 60
-  dns_min: 360
-  rescan_min: 1440
-  triage_min: 1
+# ---------------------------------------------------------------------------
+# 아래 섹션은 현재 코드가 읽지 않는다(이전 자동화 봇 시절 유물).
+# 재사용 시 주석을 풀고 core/config.py에 로딩 로직을 추가해야 한다.
+# ---------------------------------------------------------------------------
 
-web:
-  host: 0.0.0.0
-  port: 8500
+# hackerone:
+#   api_key_env: H1_API_KEY
+#   programs:
+#     - "dvwa"
+#     - "juice-shop"
 
-# 실전 테스트 대상
-targets:
-  - name: "DVWA"
-    url: "http://localhost:8081"
-    program: "dvwa"
-  - name: "Juice Shop"
-    url: "http://localhost:3000"
-    program: "juice-shop"
+# llm:
+#   provider: mock  # mock (내가 판단), openai, anthropic
+#   model: gpt-4o
+#   temperature: 0.3
+#   max_tokens: 2000
+
+# scheduler:
+#   ct_min: 60
+#   dns_min: 360
+#   rescan_min: 1440
+#   triage_min: 1
+
+# web:
+#   host: 0.0.0.0
+#   port: 8500
+
+# targets:
+#   - name: "DVWA"
+#     url: "http://localhost:8081"
+#   - name: "Juice Shop"
+#     url: "http://localhost:3000"
+#   - name: "bWAPP"
+#     url: "http://localhost:8082"
+#   - name: "WebGoat"
+#     url: "http://localhost:8083/WebGoat"

@@ -1,24 +1,24 @@
-# BugBounty Bot — 자동 버그바운티 탐색·리포트·제출 봇
+# Cassandra — LLM 에이전트의 블랙박스 웹 취약점 탐색 도구
 
 ## ⭐ North Star (최종 목표)
 
-**처음 보는(알지 못하는) 웹 애플리케이션에서 취약점을 자동으로 발견하고, HackerOne에 제출해서 상금을 버는 실전 도구.**
+**처음 보는(알지 못하는) 웹 애플리케이션에서 취약점을 찾아내는 블랙박스 보안 도구.** LLM 코딩 에이전트의 **도구(toolset)**로 설계된다.
 
-- DVWA·Juice Shop은 **검증 벤치마크**일 뿐, 최종 목표가 아니다.
-- 최종 시험: **알지 못하는 실제 HackerOne 프로그램**에서, 사람이 개입하지 않고(반자동: 제출 전 승인만) 진짜 버그를 찾아 제출·accepted·payout.
-- 성공 지표: **실제 HackerOne 프로그램에서 accepted 버그 ≥ N개, payout ≥ $X** (N·X는 실전 단계에서 정함).
+- DVWA·Juice Shop·WebGoat·bWAPP은 **검증 벤치마크**일 뿐, 최종 목표가 아니다.
+- **아키텍처 핵심**: Cassandra는 **판단하지 않는다**. HTTP 트래픽을 주고받아 **사실(관찰)만 JSON**으로 돌려준다. *판단*("credential을 모른 상태에서 열 수 있는 경로는?")은 **LLM 에이전트(뇌)**가 한다. 사람이 감독한다.
+- 성공 지표: **본 적 없는 실제 사이트**에서 같은 "관찰→판단→시도→확인" 루프로 취약점을 재현.
 
-**이 목표를 잊지 않기 위해**: 모든 단계는 "처음 보는 웹에서 취약점을 찾는다"로 수렴해야 한다. 벤치마크(DVWA/Juice Shop)에서 발견률을 높이는 것은 **수단**이지 **목적**이 아니다.
+**이 목표를 잊지 않기 위해**: 모든 단계는 "처음 보는 웹에서 취약점을 찾는다"로 수렴해야 한다. 벤치마크에서 발견률을 높이는 것은 **수단**이지 **목적**이 아니다.
 
 ---
 
-**목표**: HackerOne 버그바운티에 버그를 자동으로 발견·리포트·제출해서 상금을 버는 실전 도구. GitHub에 공개해서 명성도 쌓는다.
+**목표**: LLM 에이전트가 `python -m core.main <명령>`을 호출하면, Cassandra가 HTTP 트래픽을 주고받아 결과를 **JSON**으로 돌려주는 도구. 에이전트는 그 관찰을 읽고 판단·다음 명령을 결정한다.
 
-**핵심 방향 (2026-11-11 결정)**: **과최적화하지 말고, 점진적으로 알려진 취약점을 모두 발견할 수 있는 범용 도구**로 발전시킨다.
-- **과최적화 금지**: DVWA/Juice Shop에 맞춰서만 고치지 않는다. 일반화 가능한 방식으로 고친다.
-- **점진적**: 한 번에 모든 취약점을 잡으려 하지 않는다. 단계별로 취약점 유형을 추가한다.
-- **목표**: 알려진 취약점(DVWA ~13개, Juice Shop ~20+개)을 **모두** 자동 발견할 수 있는 도구.
-- **측정**: `docs/VULN_REPORT.md`의 발견률(DVWA ~54%, Juice Shop ~10%)을 단계별로 높인다.
+**핵심 방향 (2026-11-11 결정)**:
+- **과최적화 금지**: 특정 앱에 맞춰 전용 코드를 만들지 않는다. 보편적 신호(payload/시그니처/로직)로 고친다.
+- **점진적**: 한 번에 수행할 수 있는 블록 단위로 나눠 단계적으로 추가한다.
+- **Default Credential 금지**: "이 앱의 기본 계정은?"을 웹 검색해 답을 가져오는 보상해킹을 하지 않는다. 대상이 스스로 공개하는 것(폼 힌트, robots.txt, JS 번들, 에러)만 읽고, 사전(dictionary)을 대고 대상의 반응(리다이렉트·상태코드)으로 확인한다.
+- **측정**: 알려진 취약점 **발견률** — 벤치마크에서 매 블록 후 `docs/VULN_REPORT.md` 갱신.
 
 ---
 
@@ -27,55 +27,47 @@
 | 항목 | 결정 |
 |------|------|
 | 버그 종류 | 웹앱(SQLi/XSS/IDOR/SSRF/auth bypass) + 로직(race condition/payment bypass) + 인프라(DNS/TLS/subdomain takeover/cloud misconfig) |
-| 킬체인 | 스캔 → PoC → 리포트 → HackerOne 제출 |
+| 킬체인 | 관찰(scan) → 판단(LLM) → 시도(sqli/exploit/bruteforce) → 확인(verify) |
 | 자산 소스 | 새 도메인(CT/DNS) + 새 API 엔드포인트 + CVE 매칭 + 기존 자산 재스캔 |
-| 플랫폼 | HackerOne (API) |
-| 스캔 | Nuclei + 자체 Python + LLM (판단·리포트) |
+| 판단 | **LLM 에이전트**(Cassandra 외부) — 도구 내부에 LLM 클라이언트를 두지 않는다 |
 | 성격 | 실전 (교육용 아님, Nightjar와 무관) |
 
 ---
 
-## 2. 아키텍처
+## 2. 아키텍처 — 두뇌(LLM) + 감각기관(Cassandra)
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  BugBounty Bot (Python daemon)                                  │
-│                                                                 │
-│  ┌────────────┐   ┌────────────┐   ┌────────────────────────┐  │
-│  │ Asset      │   │ Scanner    │   │ Triage (LLM)           │  │
-│  │ Discovery  │──►│            │──►│ - 진짜 버그?           │  │
-│  │            │   │ - Nuclei   │   │ - 심각도 (low~crit)    │  │
-│  │ - CT log   │   │ - Python   │   │ - 리포트 작성          │  │
-│  │ - DNS      │   │   custom   │   │ - PoC (curl/스크린샷)  │  │
-│  │ - API      │   │ - infra    │   │ - dedup               │  │
-│  │ - CVE      │   │ - logic    │   └───────────┬────────────┘  │
-│  │ - rescan   │   └────────────┘               │              │
-│  └────────────┘                                 ▼              │
-│                                    ┌──────────────────────┐    │
-│                                    │ HackerOne Client     │    │
-│                                    │ - report.create()    │    │
-│                                    │ - triage track       │    │
-│                                    │ - auto-respond (LLM) │    │
-│                                    └──────────────────────┘    │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Web Dashboard (Flask)                                    │  │
-│  │ - 파이프라인 실시간: 자산→스캔→버그→리포트→제출         │  │
-│  │ - 리포트 리뷰/수정/제출 (반자동)                         │  │
-│  │ - 수익: accepted/rejected/payout                         │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ SQLite: assets, findings, reports, submissions, earnings │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+사람(감독) ── 지시 ──► LLM 에이전트(뇌: 판단)
+                          │ run_shell: python -m core.main <명령>
+                          ▼
+                    Cassandra(감각기관)
+                    ┌─────────────────────────────────────┐
+                    │  scanner/  (① 관찰)                  │
+                    │  exploit/  (③ 시도)                  │
+                    │  verify/   (④ 확인)                  │
+                    │  asset/    (자산 발견)               │
+                    │  triage/   (dedup, poc)             │
+                    │  core/     (CLI, models, config)    │
+                    └──────────────────┬──────────────────┘
+                                       │ HTTP 트래픽
+                                       ▼
+                                 대상 웹 서버
+                                       │
+                                       ▼  JSON(사실만)
+                                 LLM이 읽고 다음 판단
 ```
 
 **데이터 흐름**:
-1. Asset Discovery → `Asset` (domain, subdomains, endpoints, tech_stack, cves)
-2. Scanner → `Finding` (asset, vuln_type, severity, evidence, poc_request)
-3. Triage (LLM) → `Report` (title, summary, poc, impact, recommendation, rating)
-4. HackerOne Client → `Submission` (report_id, status, payout)
+1. `scan` → 페이지·폼·JS API·헤더·에러 (JSON)
+2. LLM 판단 → 공격 경로 선택
+3. `sqli` / `sqli-login` / `bruteforce` / `exploit` → 실행 결과 (JSON)
+4. `verify` → 재현 + before/after 차이 (`reproduced: true/false`)
+5. LLM 최종 판단 → 리포트(`Report` 모델, status: draft/verified/reported/accepted/rejected)
+
+**왜 이렇게 나누는가**:
+- **Cassandra(도구)는 판단하지 않는다.** HTTP를 날리고, 받은 바이트를 분석해서 *사실*만 JSON으로 넘긴다. 판단을 넣으면 특정 앱에 맞춰 과최적화되고, 새 웹사이트에서 안 먹힌다.
+- **LLM(에이전트)이 판단한다.** Cassandra의 JSON을 읽고, 사람 보안 전문가가 머릿속으로 하는 것과 똑같은 추론을 한다.
+- **사람은 감독자이다.** LLM의 판단과 Cassandra의 증거를 보고 최종 승인한다.
 
 ---
 
@@ -85,72 +77,75 @@
 
 | 파일 | 기능 |
 |------|------|
-| `config.py` | YAML 설정 로드 (API key, programs, scan interval, LLM) |
-| `db.py` | SQLite (assets, findings, reports, submissions, earnings) |
-| `models.py` | dataclass: Asset, Finding, Report, Submission |
-| `scheduler.py` | APScheduler (CT poll, DNS, rescan, triage check) |
-| `logger.py` | 로깅 (파일 + 대시보드) |
+| `config.py` | YAML 설정 로드 (`scan` + `db_path`) |
+| `db.py` | SQLite (assets, findings, reports) |
+| `models.py` | dataclass: Endpoint, Asset, Finding, Report |
+| `scheduler.py` | APScheduler (재스캔 등) |
+| `logger.py` | 로깅 |
+| `main.py` | CLI: scan, sqli, sqli-login, bruteforce, exploit, verify |
 
-### 3.2 `asset/` — 자산 발견
+### 3.2 `scanner/` — ① 관찰 (보편적 신호로 판별, 앱 이름 하드코딩 없음)
+
+| 파일 | 관찰하는 것 |
+|------|------------|
+| `sqli.py` | SQL 인젝션 (boolean / time-based blind / union / error) |
+| `xss.py` | Reflected XSS, DOM XSS(JS 번들 sink+source), Stored XSS |
+| `idor.py` | IDOR (다른 사용자 ID로 접근) |
+| `ssrf.py` | SSRF |
+| `auth.py` | 인증 우회 (HTTP method override 등) |
+| `fuzz.py` | 이상 탐지 (status code 변화) |
+| `cve.py` | CVE 매칭 (tech detection + NVD) |
+| `api.py` | REST API (auth, rate limit, body injection) |
+| `file.py` | 파일 업로드 RCE, path traversal |
+| `session.py` | Weak Session, Insecure CAPTCHA, Password Reset |
+| `infra.py` | DNS misconfig, TLS, subdomain takeover |
+| `logic.py` | Race condition, payment bypass, workflow skip |
+| `nuclei.py` | Nuclei CLI (subprocess) |
+| `context.py` | JS 번들에서 API 엔드포인트 추출 (SPA용) |
+| `login.py` | 로그인/세션 처리 |
+| `web.py` | **orchestrator** — 위 모듈들을 모두 호출 |
+
+### 3.3 `exploit/` — ③ 시도
+
+| 파일 | 기능 |
+|------|------|
+| `executor.py` | sqli_probe, sqli_login_probe (LLM이 지시한 payload 실행) |
+| `bruteforce.py` | 로그인 브루트포스 (사전 vs 대상 반응) |
+| `poc.py` | PoC 생성 (curl/HTTP) |
+
+### 3.4 `verify/` — ④ 확인
+
+| 파일 | 기능 |
+|------|------|
+| `evidence.py` | 재현 + before/after 응답 차이 캡처 → `reproduced: true/false` |
+
+### 3.5 `asset/` — 자산 발견
 
 | 파일 | 기능 |
 |------|------|
 | `ct.py` | crt.sh API 폴링 → 새 서브도메인 |
-| `dns.py` | DNS brute-force (subfinder 또는 자체) + A/AAAA/CNAME/MX/TXT |
+| `dns.py` | DNS brute-force + A/AAAA/CNAME/MX/TXT |
 | `api_crawl.py` | robots.txt, sitemap, JS 분석, OpenAPI → 엔드포인트 |
 | `cve_match.py` | Wappalyzer/httpx headers → 버전 → NVD CVE 매칭 |
 | `rescan.py` | 기존 자산 정기 재스캔 |
-| `scope.py` | HackerOne 프로그램 in-scope/out-of-scope (wildcard) |
+| `scope.py` | in-scope/out-of-scope (wildcard) |
+| `crawl.py` | 정적 crawl + robots.txt + JS 번들 라우트 추출 |
 
-### 3.3 `scanner/` — 스캔
-
-| 파일 | 기능 |
-|------|------|
-| `nuclei.py` | Nuclei CLI (subprocess), YAML 템플릿, CVE별 |
-| `web.py` | SQLi, XSS, IDOR, SSRF, auth bypass (httpx) |
-| `infra.py` | DNS misconfig, TLS, subdomain takeover, S3/GCS |
-| `api.py` | REST/GraphQL: auth, rate limit, injection, mass assignment |
-| `logic.py` | race condition, payment bypass, workflow skip |
-| `orchestrator.py` | 스캔 순서, rate limit, concurrent control |
-
-### 3.4 `triage/` — LLM 판단 + 리포트
+### 3.6 `triage/` — 중복 제거 + PoC
 
 | 파일 | 기능 |
 |------|------|
-| `judge.py` | LLM: 진짜 버그? (false positive 제거) |
-| `severity.py` | LLM: HackerOne rating (low/med/high/crit) |
-| `report.py` | LLM: HackerOne 형식 (title, summary, PoC, impact, recommendation) |
-| `poc.py` | 재현 curl/HTTP + 스크린샷 (Playwright) |
 | `dedup.py` | 중복 제거 (asset + vuln_type + endpoint) |
+| `poc.py` | 재현 curl/HTTP + 스크린샷 (Playwright) |
 
-**LLM**: OpenAI GPT-4o (기본) / Anthropic Claude / Ollama (로컬). API key는 `.env`.
+> **LLM 판단·리포트는 에이전트가 수행한다.** Cassandra 내부에 LLM 클라이언트를 두지 않는다. `Report` 모델(status: draft/verified/reported/accepted/rejected)은 에이전트가 리포트를 작성할 때 쓰는 데이터 구조로만 유지된다.
 
-### 3.5 `hackerone/` — 플랫폼
-
-| 파일 | 기능 |
-|------|------|
-| `auth.py` | API key 인증 |
-| `client.py` | REST API (hackerone-py 또는 직접) |
-| `submit.py` | report.create + 파일 첨부 |
-| `track.py` | triage 상태 (new→triaging→resolved→paid), 연구원 질문 LLM 자동 응답 |
-| `programs.py` | 대상 프로그램 + scope |
-
-### 3.6 `web/` — 대시보드
+### 3.7 `web/` — 대시보드
 
 | 파일 | 기능 |
 |------|------|
-| `app.py` | Flask |
-| `routes.py` | API + 페이지 |
-| `templates/` | dashboard, reports, report_detail, assets, earnings, programs |
-| `static/` | JS (polling 3s) + CSS |
-
-**페이지**:
-- `/` — 파이프라인 실시간 (자산→스캔→버그→리포트→제출)
-- `/reports` — 목록 (draft/submitted/accepted/rejected)
-- `/reports/<id>` — LLM 작성, 수정, 제출 버튼
-- `/assets` — 자산 + 스캔 상태
-- `/earnings` — accepted 수, payout, 프로그램별
-- `/programs` — 대상 HackerOne 프로그램
+| `app.py` | Flask 대시보드 |
+| `templates/`, `static/` | UI |
 
 ---
 
@@ -161,161 +156,144 @@
 | 언어 | Python 3.11+ |
 | HTTP | httpx (async, HTTP/2) |
 | 스캔 | Nuclei (subprocess) + 자체 Python |
-| LLM | OpenAI GPT-4o / Claude / Ollama |
 | DB | SQLite |
 | 웹 | Flask |
 | 스케줄러 | APScheduler |
-| 브라우저 | Playwright (스크린샷) |
+| 브라우저 | Playwright (스크린샷, optional) |
 | DNS | dnspython |
 | CT | crt.sh API |
 | 패키지 | uv (pyproject.toml + uv.lock) |
 
-**외부 바이너리 (subprocess)**: Nuclei, subfinder (선택)
+**외부 바이너리 (subprocess)**: Nuclei (optional)
 
 ---
 
-## 5. 운영
+## 5. CLI 명령
 
-### 5.1 daemon
+| 명령 | 역할 | 필수 옵션 |
+|------|------|-----------|
+| `scan` | ① 관찰 — 무인증 표면, 인증 후 내부 | `url` |
+| `sqli` | ③ 시도 — SQLi 자동 탐사 | `url` |
+| `sqli-login` | ③ 시도 — 로그인 폼 SQLi | `base_url`, `--login-url` |
+| `bruteforce` | ③ 시도 — 로그인 브루트포스 | `base_url`, `--login-url` |
+| `exploit` | ③ 시도 — LLM이 지시한 payload | `url`, `-i` |
+| `verify` | ④ 확인 — 재현 + before/after | `url`, `-i` |
 
-```bash
-bugbounty-bot --config config.yaml
-```
+모든 명령은 **JSON**을 stdout으로 돌려준다.
 
-| 작업 | 주기 |
-|------|------|
-| CT poll (새 서브도메인) | 1h |
-| DNS brute (새 자산) | 6h |
-| 재스캔 (기존 자산) | 24h |
-| Nuclei + Python 스캔 | 자산 발견 시 즉시 |
-| LLM triage | Finding 발생 시 즉시 |
-| HackerOne triage check | 1h |
+---
 
-### 5.2 반자동
+## 6. config.yaml
 
-- **자동**: 자산 → 스캔 → Finding → LLM 판단 → 리포트 작성
-- **인간**: 대시보드에서 리포트 리뷰 → "제출" 클릭
-- **`--auto-submit`**: high/crit만 자동 제출
-
-### 5.3 config.yaml
+코드가 실제로 읽는 섹션:
 
 ```yaml
-hackerone:
-  api_key_env: H1_API_KEY   # .env에서
-  programs: [google, github, shopify]
-
 scan:
-  nuclei_templates: [cves/, exposures/, misconfigurations/]
-  custom: [sqli, xss, idor, ssrf, auth_bypass, race_condition]
-  rate_limit: 10            # req/s
   concurrent: 5
+  timeout: 10
+  user_agent: "Mozilla/5.0 ..."
+  max_pages: 50
+  follow_redirects: true
 
-llm:
-  provider: openai          # openai | anthropic | ollama
-  model: gpt-4o
-  auto_submit_min: high     # high | crit
-
-scheduler:
-  ct_min: 60
-  dns_min: 360
-  rescan_min: 1440
-  triage_min: 60
-
-web:
-  host: 0.0.0.0
-  port: 8500
+db_path: "cassandra.db"
 ```
+
+`.env`(gitignore)에서 API 키 등을 관리한다.
 
 ---
 
-## 6. GitHub
+## 7. GitHub
 
-- **README.md**: 아키텍처, 사용법, "Found X bugs, earned $Y" + HackerOne profile
-- **demo/**: Docker Compose (DVWA + Juice Shop) + demo.sh
-- **docs/walkthrough.md**: 코드 설명 (Nightjar 스타일)
+- **README.md / README.en.md**: 아키텍처, 사용법, 실측 결과
+- **demo/**: Docker Compose (DVWA + Juice Shop + bWAPP + WebGoat) + demo.sh
+- **docs/walkthrough.md**: 코드 설명 ("왜 이렇게 만들었나")
+- **docs/VULN_REPORT.md**: 취약점 분석 (exploit 실측 + 발견률)
+- **docs/agent_prompts.md**: LLM 에이전트가 Cassandra를 부를 때 쓰는 프롬프트
 - **LICENSE**: MIT
 - **GitHub Actions**: lint + test
 
 ---
 
-## 7. 구조
+## 8. 구조
 
 ```
-bugbounty/
+cassandra/
 ├── PLAN.md
-├── README.md
-├── DEPLOY.md
-├── config.yaml
-├── pyproject.toml
-├── .env.example
-├── .venv/
-├── core/          config, db, models, scheduler, logger
-├── asset/         ct, dns, api_crawl, cve_match, rescan, scope
-├── scanner/       nuclei, web, infra, api, logic, orchestrator
-├── triage/        judge, severity, report, poc, dedup
-├── hackerone/     auth, client, submit, track, programs
-├── web/           app, routes, templates/, static/
-├── demo/          docker-compose.yml, demo.sh
-├── tests/         test_scanner, test_triage, test_hackerone, test_integration
-└── docs/          walkthrough.md
+├── HANDOFF.md         # (gitignore, 내부)
+├── README.md, README.en.md
+├── LICENSE, config.yaml, pyproject.toml, uv.lock
+├── core/              # models, config, db, scheduler, logger, main (CLI)
+├── scanner/           # sqli, xss, idor, ssrf, auth, fuzz, cve, api, file,
+│                      #   session, infra, logic, nuclei, context, login, web
+├── exploit/           # executor, bruteforce, poc
+├── verify/            # evidence
+├── asset/             # ct, dns, api_crawl, cve_match, rescan, scope, crawl
+├── triage/            # dedup, poc
+├── web/               # app, templates/, static/
+├── demo/              # docker-compose.yml, demo.sh
+├── tests/             # test_mvp, test_asset, test_stage3, test_dvwa_login,
+│                      #   test_8c_multistep, test_live
+└── docs/              # logo, VULN_REPORT, walkthrough, agent_prompts, architecture.svg
 ```
 
 ---
 
-## 8. 구현 순서
+## 9. 구현 순서
 
 | 단계 | 내용 | 완료 기준 |
 |------|------|----------|
-| **1. MVP** | core + scanner(web: SQLi/XSS/IDOR) + triage(LLM) + hackerone(submit) + web | 1개 버그: 발견→리포트→제출 |
+| **1. MVP** | core + scanner(SQLi/XSS/IDOR) + triage + 대시보드 | 1개 버그: 관찰→실행→확인 |
 | **2. 자산** | asset(CT/DNS/api_crawl) + scheduler | 새 자산 자동 발견→스캔 |
-| **3. 확장** | scanner(infra/api/logic) + nuclei + poc(스크린샷) | 전체 버그 종류 |
-| **4. 자동화** | auto-submit + triage track + dedup + earnings | 완전 자동 |
-| **5. 명성** | README + demo(Docker) + walkthrough + CI | GitHub 공개 |
-| **6. 알려진 취약점 커버리지** | DVWA/Juice Shop 알려진 취약점 **모두** 자동 발견 (점진적, 과최적화 금지) | DVWA ~13/13, Juice Shop ~20/20 |
-| **7. 일반화 (범용성)** | 벤치마크 전용 코드 제거, **알지 못하는 웹**에서도 동작하는 범용 스캐너 | **알지 못하는 웹 앱**(예: 다른 학습 앱/실제 사이트)에서 벤치마크와 동등한 findings |
-| **8. 실전 (HackerOne)** | **처음 보는 실제 HackerOne 프로그램**에서 자동 스캔 → triage → 제출(반자동) | **실제 프로그램에서 accepted 버그 ≥ N, payout ≥ $X** (North Star) |
+| **3. 확장** | scanner(infra/api/logic/nuclei/session/file) + poc | 전체 버그 종류 |
+| **4. 자동화** | dedup + earnings + CI/demo | 완전 자동 |
+| **5. 명성** | README + demo(Docker) + walkthrough + LICENSE | GitHub 공개 |
+| **6. 알려진 취약점 커버리지** | DVWA/Juice Shop/WebGoat/bWAPP 알려진 취약점 **모두** 자동 발견 | 벤치마크 실측 confirmed |
+| **7. 일반화 (범용성)** | 벤치마크 전용 코드 제거, **알지 못하는 웹**에서도 동작 | **알지 못하는 웹 앱**에서 동등한 findings |
+| **8. 아키텍처 재정의** | 도구+에이전트 분리 확정, HackerOne/LLM 클라이언트 제거, CLI 6개 명령 | ✅ 완료 (2026-11-16) |
+| **9. 실전** | **처음 보는 실제 사이트**에서 같은 루프 동작 | **North Star** |
 
-### 8.1 단계 6 — 알려진 취약점 커버리지 (점진적 로드맵)
+### 9.1 단계 6 — 알려진 취약점 커버리지 (점진적 로드맵)
 
-**원칙**: 과최적화 금지. 각 항목은 **일반화 가능한 방식**(payload/시그니처/로직)으로 고친다. DVWA/Juice Shop은 **검증 벤치마크**일 뿐, 그 앱 전용 코드는 만들지 않는다.
+**원칙**: 과최적화 금지. 각 항목은 **일반화 가능한 방식**(payload/시그니처/로직)으로 고친다.
 
-**현재 발견률** (docs/VULN_REPORT.md): DVWA ~54% (7/13), Juice Shop ~10% (2/20)
+| 서브단계 | 추가 취약점 | 일반화 방식 |
+|----------|-----------|-----------|
+| **6a. API/NoSQL** | NoSQLi login, Admin Registration | API body injection: `$ne`/`$gt`/`$regex` operator + 200/201 판별. OpenAPI/Swagger 자동 탐지 |
+| **6b. XSS 확장** | DOM XSS, Stored XSS | DOM: JS 번들에서 `innerHTML`/`document.write`/`location.hash` sink 탐지. Stored: POST body에 XSS payload → GET 반사 확인 |
+| **6c. 파일/업로드** | File Upload, File Download | multipart POST + 확장자/Content-Type 변형. path traversal(`../`) |
+| **6d. 인증/세션** | Weak Session, CAPTCHA, Password Reset | cookie 재생성→entropy/순차성/길이 분석, CAPTCHA sitekey/이미지 재사용, reset token 예측 |
+| **6e. 로직/인프라** | Race Condition, Payment Bypass, DNS/TLS | 동시 요청+결과 대조, 가격/수량 변형, DNS misconfig/TLS weak cipher/subdomain takeover |
 
-| 서브단계 | 추가 취약점 | 일반화 방식 | 벤치마크 검증 |
-|----------|-----------|-----------|--------------|
-| **6a. API/NoSQL** | NoSQLi login, Admin Registration, Login Admin | API body injection: `$ne`/`$gt`/`$regex` operator + 200/201 응답 판별. OpenAPI/Swagger 자동 탐지(`/openapi.json`, `/swagger.json`)로 endpoint·method·body schema 자동 추출 | Juice Shop: NoSQLi login, Admin Registration, Login Admin |
-| **6b. XSS 확장** | DOM XSS, Stored XSS(DVWA) | DOM: JS 번들에서 `innerHTML`/`document.write`/`location.hash` sink 탐지. Stored: POST/PUT body에 XSS payload → GET으로 반사 확인(기존 body scanner 확장) | Juice Shop: DOM XSS, DVWA: Stored XSS |
-| **6c. 파일/업로드** | File Upload, File Download | 업로드 endpoint: multipart POST + 확장자/Content-Type 변형. 다운로드: path traversal(`../`) | Juice Shop: File Upload, File Download |
-| **6d. 인증/세션** | Weak Session, CAPTCHA, Password Reset | 세션: cookie entropy/만료 분석. CAPTCHA: 자동 풀기(OCR) + 우회. Password Reset: token 예측/재사용 | Juice Shop: Weak Session, CAPTCHA, Password Reset |
-| **6e. 로직/인프라** | Race Condition, Payment Bypass, DNS/TLS | race: 동시 요청 + 결과 대조. payment: 가격/수량 변형. infra: DNS misconfig, TLS weak cipher, subdomain takeover | Juice Shop: Race Condition, Payment Bypass + infra scanner |
+**완료 기준**: 각 서브단계 후 `docs/VULN_REPORT.md` 갱신 + 발견률 측정.
 
-**완료 기준**: 각 서브단계 후 `docs/VULN_REPORT.md` 갱신 + 발견률 측정. 최종: DVWA ~13/13, Juice Shop ~20/20.
-
-### 8.2 단계 7 — 일반화 (범용성)
-
-**목표**: DVWA/Juice Shop에 맞춰진 코드를 일반화해서, **알지 못하는 웹 앱**에서도 취약점을 찾는다.
+### 9.2 단계 7 — 일반화 (범용성)
 
 - 벤치마크 전용 로직(경로 하드코딩, 앱 전용 payload) 제거 → generic 탐지(OpenAPI, form, JS sink, header)
-- **새 벤치마크 추가**: DVWA/Juice Shop 외에 다른 취약 앱(예: WebGoat, bWAPP, Mutillidae)에서 발견률 측정 — 과최적화 방지 검증
+- **새 벤치마크 추가**: bWAPP, WebGoat
 - 완료 기준: **알지 못하는 웹 앱**에서 벤치마크와 동등한 findings + 오탐률 관리
 
-### 8.3 단계 8 — 실전 (HackerOne) — **North Star**
+### 9.3 단계 8 — 아키텍처 재정의 (✅ 완료 2026-11-16)
 
-**목표**: 처음 보는 실제 HackerOne 프로그램에서, 사람이 제출 전 승인만 하고, 봇이 스캔→triage→제출을 자동 수행.
+- **제거**: `hackerone/` 패키지, `H1_*` env, `Submission` 모델, payout, `scanner/llm.py`, `triage/llm.py`
+- **유지**: `Report` 모델(에이전트 작성용)
+- **확정**: CLI 6개 명령(scan/sqli/sqli-login/bruteforce/exploit/verify), JSON 출력
+- **4개 벤치마크 실측**: DVWA, Juice Shop, WebGoat, bWAPP — 모두 confirmed
 
-- 대상 프로그램 선정(scope, in-scope 자산) → 자동 스캔 → LLM triage(오탐 제거) → **인간 승인** → 제출 → triage track
-- 성공 지표: **accepted 버그 ≥ N, payout ≥ $X** (N·X는 이 단계에서 사람과 합의)
-- 리스크: 오탐 제출(평판 손상) → auto_submit_min(high) + 인간 승인 + rate limit
+### 9.4 단계 9 — 실전 (North Star)
+
+- **처음 보는 실제 사이트**에서, LLM 에이전트가 Cassandra를 도구로 써서 "관찰→판단→시도→확인" 루프를 돌린다.
+- 성공 지표: **실제 사이트에서 confirmed 취약점 ≥ N**
+- 리스크: 오탐 → verify(reproduced) + 사람 승인
 
 ---
 
-## 9. 리스크
+## 10. 리스크
 
 | 리스크 | 대응 |
 |--------|------|
-| LLM false positive | dedup + auto_submit_min(high) + 인간 승인 |
-| HackerOne rate limit | rate_limit + exponential backoff |
-| Nuclei false positive | LLM judge 2차 |
+| LLM false positive | verify(재현) + 사람 승인 |
+| 과최적화 | 보편적 신호만, 벤치마크 외 검증 |
+| Default credential 의존 | 원칙: 대상이 공개하는 것만 + 사전 |
 | API key 노출 | .env (gitignore) |
-| 목표 사이트 장애 | rate limit + concurrent + scope 확인 |
-| LLM 비용 | 캐싱 + Ollama 옵션 |
+| 목표 사이트 장애 | rate limit + concurrent |
+| LLM 비용 | 에이전트 측 문제(도구에는 LLM 클라이언트 없음) |

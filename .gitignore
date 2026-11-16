@@ -28,3 +28,6 @@ test-results/
 
 # Logs
 *.log
+
+# Internal
+HANDOFF.md

@@ -1,4 +1,4 @@
-# BugBounty Bot — 취약점 분석 보고서
+# Cassandra — 취약점 분석 보고서
 
 **작성일**: 2026-11-14 (8: LLM scanner 보완 — POST body, multi-step, bWAPP/WebGoat 실측)
 **대상**: DVWA (vulnerable/web-dvwa:latest), OWASP Juice Shop (bkimminich/juice-shop:latest, v20.2.0), bWAPP (raesene/bwapp:latest), OWASP WebGoat (webgoat/webgoat:latest)

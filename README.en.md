@@ -56,7 +56,7 @@ Cassandra → { pages:[...], forms:[{action:/login.php, fields:[username,passwor
 LLM   : (judgment) A login form is visible. I don't know the credentials.
         The page may give a hint, or I can brute with a dictionary.
         [run_shell] python -m core.main bruteforce http://localhost:8081 \
-                     --login-url /login.php --max-attempts 200
+                     --login-url /login.php --users admin --passwords password,admin --max-attempts 200
 Cassandra → { success:true, username:"admin", password:"password", evidence:"redirect → index.php" }
 
 LLM   : (judgment) In as admin/password. Scan the interior for SQLi/XSS candidates.
@@ -110,11 +110,11 @@ python -m core.main sqli-login http://localhost:8081 --login-url /login.php
 
 #    Login bruteforce (dictionary vs the target's reaction)
 python -m core.main bruteforce http://localhost:8082 \
-    --login-url /login.php --user-field login --pass-field password --max-attempts 200
+    --login-url /login.php --users admin,root --passwords password,admin,123456 --max-attempts 200
 
 #    Run the payload the LLM specified (POST body·custom headers)
 python -m core.main exploit "http://localhost:8082/htmli_get.php?firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E" \
-    -i "XSS reflected in firstname" --expected "alert(1)"
+    -i "XSS reflected in firstname"
 
 # ④ Confirm — reproduce + before/after evidence
 python -m core.main verify "http://localhost:8082/sqli_1.php?title=a%27&action=search" \
@@ -193,7 +193,7 @@ cassandra/
 ├── exploit/       # ③ attempt: executor(sqli_probe, sqli_login_probe), bruteforce, poc
 ├── verify/        # ④ confirm: evidence (reproduce + before/after)
 ├── asset/         # asset discovery (CT, DNS, API crawl, CVE, rescan, scope)
-├── triage/        # LLM (judge, severity, report, PoC), dedup
+├── triage/        # dedup, poc (LLM judgment·report is done by the agent)
 ├── web/           # dashboard
 ├── demo/          # docker-compose (DVWA + Juice Shop + bWAPP + WebGoat)
 ├── tests/         # integration tests
@@ -203,10 +203,12 @@ cassandra/
 ## Tests
 
 ```bash
-python tests/test_mvp.py      # MVP
-python tests/test_asset.py    # asset discovery
-python tests/test_stage3.py   # scanner expansion + daemon
-python tests/test_live.py     # DVWA + Juice Shop live
+python tests/test_mvp.py          # MVP
+python tests/test_asset.py        # asset discovery
+python tests/test_stage3.py       # scanner expansion + daemon
+python tests/test_dvwa_login.py   # DVWA login
+python tests/test_8c_multistep.py # multi-step flow
+python tests/test_live.py         # DVWA + Juice Shop live
 ```
 
 ## Docs

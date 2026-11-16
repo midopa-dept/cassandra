@@ -56,7 +56,7 @@ Cassandra → { pages:[...], forms:[{action:/login.php, fields:[username,passwor
 LLM   : (판단) 로그인 폼이 보인다. credential을 몰라.
         페이지가 힌트를 주거나, 사전으로 브루트할 수 있다.
         [run_shell] python -m core.main bruteforce http://localhost:8081 \
-                     --login-url /login.php --max-attempts 200
+                     --login-url /login.php --users admin --passwords password,admin --max-attempts 200
 Cassandra → { success:true, username:"admin", password:"password", evidence:"redirect → index.php" }
 
 LLM   : (판단) admin/password로 들어갔다. 내부 스캔해서 SQLi/XSS 후보를 본다.
@@ -110,11 +110,11 @@ python -m core.main sqli-login http://localhost:8081 --login-url /login.php
 
 #    로그인 브루트포스 (사전 대고, 대상의 반응으로 확인)
 python -m core.main bruteforce http://localhost:8082 \
-    --login-url /login.php --user-field login --pass-field password --max-attempts 200
+    --login-url /login.php --users admin,root --passwords password,admin,123456 --max-attempts 200
 
 #    LLM이 지시한 payload 실행 (POST body·커스텀 헤더)
 python -m core.main exploit "http://localhost:8082/htmli_get.php?firstname=%3Cscript%3Ealert(1)%3C%2Fscript%3E" \
-    -i "XSS reflected in firstname" --expected "alert(1)"
+    -i "XSS reflected in firstname"
 
 # ④ 확인 — 재현 + before/after 증거
 python -m core.main verify "http://localhost:8082/sqli_1.php?title=a%27&action=search" \
@@ -193,7 +193,7 @@ cassandra/
 ├── exploit/       # ③ 시도: executor(sqli_probe, sqli_login_probe), bruteforce, poc
 ├── verify/        # ④ 확인: evidence (재현 + before/after)
 ├── asset/         # 자산 발견 (CT, DNS, API crawl, CVE, rescan, scope)
-├── triage/        # LLM (judge, severity, report, PoC), dedup
+├── triage/        # dedup, poc (LLM 판단·리포트는 에이전트가 수행)
 ├── web/           # 대시보드
 ├── demo/          # docker-compose (DVWA + Juice Shop + bWAPP + WebGoat)
 ├── tests/         # 통합 테스트
@@ -203,10 +203,12 @@ cassandra/
 ## 테스트
 
 ```bash
-python tests/test_mvp.py      # MVP
-python tests/test_asset.py    # 자산 발견
-python tests/test_stage3.py   # scanner 확장 + daemon
-python tests/test_live.py     # DVWA + Juice Shop 실전
+python tests/test_mvp.py          # MVP
+python tests/test_asset.py        # 자산 발견
+python tests/test_stage3.py       # scanner 확장 + daemon
+python tests/test_dvwa_login.py   # DVWA 로그인
+python tests/test_8c_multistep.py # multi-step 플로우
+python tests/test_live.py         # DVWA + Juice Shop 실전
 ```
 
 ## 문서
