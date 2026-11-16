@@ -153,12 +153,17 @@ def scan_workflow_skip(base_url: str, endpoints: list[str], method: str = "POST"
     if headers:
         default_headers.update(headers)
 
-    # Try accessing later steps directly
+    # Try accessing later steps directly (only if URL has step/phase/stage keywords)
+    step_keywords = ["step", "phase", "stage", "wizard", "checkout"]
     for i, endpoint in enumerate(endpoints):
         if i == 0:
             continue  # Skip first step
 
         url = endpoint if endpoint.startswith("http") else f"{base_url}{endpoint}"
+        # Only check if URL looks like a multi-step workflow
+        if not any(kw in url.lower() for kw in step_keywords):
+            continue
+
         try:
             if method.upper() == "POST":
                 resp = httpx.post(url, json=body, headers=default_headers, timeout=10)
@@ -195,16 +200,18 @@ def scan_logic(asset: Asset) -> list[Finding]:
     base_url = f"https://{asset.domain}" if not asset.domain.startswith("http") else asset.domain
 
     for endpoint in asset.endpoints:
+        ep_url = endpoint.url if hasattr(endpoint, "url") else str(endpoint)
         # Race condition (POST endpoints)
-        if "/api/" in endpoint:
-            findings.extend(scan_race_condition(base_url, endpoint, method="POST", concurrent_requests=5))
+        if "/api/" in ep_url:
+            findings.extend(scan_race_condition(base_url, ep_url, method="POST", concurrent_requests=5))
 
         # Payment bypass (if endpoint looks like payment)
-        if any(kw in endpoint.lower() for kw in ["pay", "payment", "checkout", "order"]):
-            findings.extend(scan_payment_bypass(base_url, endpoint, method="POST"))
+        if any(kw in ep_url.lower() for kw in ["pay", "payment", "checkout", "order"]):
+            findings.extend(scan_payment_bypass(base_url, ep_url, method="POST"))
 
     # Workflow skip (if multiple endpoints)
     if len(asset.endpoints) >= 2:
-        findings.extend(scan_workflow_skip(base_url, asset.endpoints))
+        ep_urls = [e.url if hasattr(e, "url") else str(e) for e in asset.endpoints]
+        findings.extend(scan_workflow_skip(base_url, ep_urls))
 
     return findings

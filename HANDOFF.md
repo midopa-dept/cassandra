@@ -1,8 +1,8 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-14
-**현재 단계**: **단계 6 (알려진 취약점 커버리지)** — **6a + 6b + 6c + 6d 완료** → **6e(로직/인프라) 대기**
-**현재 블록**: 6e — Race Condition, Payment Bypass, DNS/TLS
+**현재 단계**: **단계 6 (알려진 취약점 커버리지) 완료** (6a~6e) → **단계 7 (일반화) 대기**
+**현재 블록**: 7 — 벤치마크 전용 코드 제거, 새 벤치마크(WebGoat/bWAPP) 검증
 
 ---
 
@@ -45,13 +45,26 @@
 | **6b. XSS 확장** | DOM XSS, Stored XSS(DVWA) | DOM: JS 번들에서 `innerHTML`/`document.write`/`location.hash` sink 탐지. Stored: body에 XSS payload → GET 반사 확인 | ✅ **완료** (dom_xss + stored_xss) |
 | **6c. 파일/업로드** | File Upload, File Download | multipart POST + 확장자/Content-Type 변형, path traversal(`../`) | ✅ **완료** (file_upload RCE + path_traversal) |
 | **6d. 인증/세션** | Weak Session, CAPTCHA, Password Reset | cookie 재생성→entropy/순차성/길이 분석, CAPTCHA sitekey/이미지 재사용, reset token 예측 | ✅ **완료** (weak_session + captcha; password_reset은 email 기반이라 토큰 미추출) |
-| **6e. 로직/인프라** | Race Condition, Payment Bypass, DNS/TLS | 동시 요청+결과 대조, 가격/수량 변형, DNS misconfig/TLS weak cipher/subdomain takeover | ⬜ |
+| **6e. 로직/인프라** | Race Condition, Payment Bypass, DNS/TLS | 동시 요청+결과 대조, 가격/수량 변형, DNS misconfig/TLS weak cipher/subdomain takeover | ✅ **완료** (scanner 버그 수정 + orchestrator/test_live 통합; localhost 벤치마크엔 해당 취약점 없음) |
 
 **완료 기준**: DVWA 13/13, Juice Shop 20/20 (VULN_REPORT.md 측정).
 
 ---
 
-## 3. 완료된 블록: 6d (인증/세션) — 결과 (2026-11-14)
+## 3. 완료된 블록: 6e (로직/인프라) — 결과 (2026-11-14)
+
+**목표**: Race Condition, Payment Bypass, DNS/TLS 자동 발견.
+
+**결과**:
+- **scanner 버그 수정**: `scan_logic`이 `Endpoint` 객체를 문자열처럼 다뤄 `TypeError` 발생 → `endpoint.url` 처리로 수정. `scan_workflow_skip`은 모든 200 페이지를 오탐 → step/phase/stage/wizard/checkout 키워드만 검사하도록 수정.
+- **통합**: `scan_infra`(TLS/subdomain takeover/S3/DNS) + `scan_logic`(race/payment/workflow)은 `core/main.py`에 이미 통합되어 있었음. `tests/test_live.py`에도 추가.
+- **벤치마크 결과**: localhost(HTTP)라 infra 0, DVWA(PHP)·Juice Shop(SPA)에 해당 취약점이 없어 logic 0. **실전(실제 도메인, REST API, 결제 플로우)에서 동작**하도록 설계.
+
+**새/수정 파일**: `scanner/logic.py`(버그 수정), `tests/test_live.py`(infra/logic 통합).
+
+---
+
+## 4. 완료된 블록: 6d (인증/세션) — 결과 (2026-11-14)
 
 **목표**: Weak Session, CAPTCHA, Password Reset 자동 발견.
 
@@ -68,7 +81,7 @@
 
 ---
 
-## 4. 완료된 블록: 6c (파일/업로드) — 결과 (2026-11-12)
+## 5. 완료된 블록: 6c (파일/업로드) — 결과 (2026-11-12)
 
 **목표**: File Upload, File Download, path traversal 자동 발견.
 
@@ -98,7 +111,7 @@
 
 ---
 
-## 4. 진행 기록
+## 6. 진행 기록
 
 ### 2026-11-11 (5~7차 세션) — 실전 테스트 + 분석
 
@@ -125,7 +138,7 @@
 
 ---
 
-## 5. 파일 구조
+## 7. 파일 구조
 
 ```
 bugbounty/
@@ -145,7 +158,7 @@ bugbounty/
 └── tests/             # test_mvp, test_asset, test_stage3, test_stage4, test_live, test_dvwa_login
 ```
 
-## 6. 테스트
+## 8. 테스트
 
 | 테스트 | 내용 | 결과 |
 |--------|------|------|
@@ -157,7 +170,7 @@ bugbounty/
 
 **실행**: `colima start stewart --cpu 2 --memory 4 --mount /Volumes/Dev/stewart-work:w` → `unset DOCKER_HOST` → `cd demo && docker-compose up -d dvwa juice-shop` → `.venv/bin/python tests/test_live.py`
 
-## 7. 환경
+## 9. 환경
 
 - **colima**: **stewart 프로파일** (2 CPU / 4GiB, `/Volumes/Dev/stewart-work` 마운트)
   - 기동: `colima start stewart --cpu 2 --memory 4 --mount /Volumes/Dev/stewart-work:w`

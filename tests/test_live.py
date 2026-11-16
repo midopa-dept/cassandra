@@ -7,6 +7,8 @@ from core.models import Asset
 from asset.crawl import crawl, crawl_api
 from scanner.web import scan_web
 from scanner.api import scan_api
+from scanner.infra import scan_infra
+from scanner.logic import scan_logic
 from scanner.login import login, get_authenticated_client
 from core.logger import setup_logger
 
@@ -53,6 +55,11 @@ def test_target(name: str, base_url: str, use_login: bool = False):
     # API scan (NoSQLi, admin registration, OpenAPI, REST body)
     api_findings = scan_api(asset)
     findings.extend(api_findings)
+    # 6e: Infra (TLS, subdomain takeover, S3, DNS) + Logic (race, payment, workflow)
+    infra_findings = scan_infra(asset)
+    findings.extend(infra_findings)
+    logic_findings = scan_logic(asset)
+    findings.extend(logic_findings)
 
     # 4. Results
     print(f"\n[4] Results: {len(findings)} findings")

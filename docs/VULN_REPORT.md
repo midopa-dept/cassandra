@@ -61,6 +61,9 @@
 | **XSS DOM** (`/xss_d/`) | ✅ | 6b: main.js sink+source 정적 분석 |
 | **Insecure CAPTCHA** | ✅ | 6d: reCAPTCHA sitekey 빈 + "key missing" + 이미지 재사용 → 우회 가능 |
 | **Weak Session IDs** | ✅ | 6d: `dvwaSession` cookie 재생성 → 순차(1,2,3,4)·저엔트로피·짧음 |
+| **Race Condition** | N/A | DVWA에 해당 취약점 없음 (6e scanner 있음) |
+| **Payment Bypass** | N/A | DVWA에 해당 취약점 없음 (6e scanner 있음) |
+| **DNS/TLS** | N/A | localhost(HTTP) — TLS/subdomain/S3/DNS 없음 (6e scanner 있음) |
 | **File Upload** | ✅ | 6c: .php 업로드 → `/hackable/uploads/` RCE |
 | **Insecure Login** | ⚠️ 부분 | brute force SQL error는 발견, 로그인 우회 자체는 미확인. |
 

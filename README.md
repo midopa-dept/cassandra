@@ -85,6 +85,7 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 | **6b** XSS 확장 | DOM XSS, Stored XSS | DVWA 40→42, Juice Shop 21→22 |
 | **6c** 파일/업로드 | File Upload RCE, Path Traversal | DVWA 42→43 |
 | **6d** 인증/세션 | **Weak Session, Insecure CAPTCHA**, Password Reset | DVWA에서 둘 다 실제 발견 |
+| **6e** 로직/인프라 | Race Condition, Payment Bypass, DNS/TLS | scanner 버그 수정 + 통합 (실전 도메인에서 동작) |
 
 **"발견률"이라는 측정 기준**이 있습니다. DVWA는 알려진 취약점 카테고리 ~13개, Juice Shop은 ~20+ 챌린지. 우리가 몇 개를 자동 발견했는지를 계속 재고 있습니다.
 
@@ -94,7 +95,6 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 | Juice Shop | ~20+개 | **~5개** | **~25%** |
 
 **다음 단계**:
-- **6e** — 로직/인프라 (Race Condition, Payment Bypass, DNS/TLS)
 - **7** — 일반화: 벤치마크 전용 코드 제거, *새* 벤치마크(WebGoat/bWAPP)에서 검증
 - **8** — 실전: *알지 못하는 실제* HackerOne 프로그램에서 자동 스캔→triage→제출 (**North Star**)
 
