@@ -184,13 +184,13 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 
 ### 4.2 "모두 exploit 가능한가?"
 
-**아니다.** findings 65개 중 **실제 exploit을 실측·확인한 것은 14개**다.
+**아니다.** findings 67개 중 **실제 exploit을 실측·확인한 것은 17개**다.
 
 | 앱 | findings | exploit 확인 | 비율 |
 |----|----------|-------------|------|
-| DVWA | **43** | **10** | **23.3%** |
+| DVWA | **45** | **12** | **26.7%** |
 | Juice Shop | **22** | **5** | **22.7%** |
-| **합계** | **65** | **14** | **21.5%** |
+| **합계** | **67** | **17** | **25.4%** |
 
 나머지 42개는 **신호(heuristic) 단계** — SQL error, length anomaly, fuzz anomaly 등. exploit으로 확인하려면 추가 작업이 필요하다.
 
@@ -200,15 +200,15 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 
 | 앱 | 알려진 취약점 | 우리가 발견 | 발견률 |
 |----|-------------|-----------|--------|
-| DVWA | ~13개 | **~8개** | **~62%** |
+| DVWA | ~13개 | **~10개** | **~77%** |
 | Juice Shop | ~20+개 | **~5개** | **~25%** |
 
 **미발견 취약점의 공통점:**
 - **DOM-based XSS** — ✅ 탐지 (6b: main.js sink+source)
 - **Stored XSS** (DVWA) — ✅ 탐지 (6b: xss_s txtName/mtxMessage)
 - **File Upload** (DVWA) — ✅ 탐지 (6c: .php → RCE)
+- **CAPTCHA, Weak Session** (DVWA) — ✅ 탐지 (6d: sitekey 빈, dvwaSession 순차)
 - **Login Admin** (Juice Shop) — admin 로그인, scanner가 미탐지
-- **CAPTCHA, Weak Session** (DVWA) — 특수 로직, scanner가 미탐지
 
 ### 4.4 scanner의 강점과 한계
 
@@ -225,8 +225,8 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 
 **한계:**
 - **Login Admin** — admin 로그인 미탐지
-- **CAPTCHA, Weak Session** — 특수 로직 미탐지
 - **UNION-based SQLi** — 컬럼 수 불일치로 미확인
+- **Password Reset** (Juice Shop) — email 기반이라 토큰 미추출 (6d: 로직은 갖춤)
 
 ### 4.5 다음 단계 (improvement)
 
@@ -237,6 +237,7 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 5. **UNION-based SQLi** — 컬럼 수 자동 탐지 + `id=-1` 사용
 6. ~~**dedicated vuln_type**~~ — ✅ 완료 (6a: nosqli, admin_registration / 6b: dom_xss, stored_xss / 6c: file_upload, path_traversal)
 7. ~~**File Upload (RCE)**~~ — ✅ 완료 (6c: .php → 저장 → 실행)
+8. ~~**Weak Session, Insecure CAPTCHA**~~ — ✅ 완료 (6d: dvwaSession 순차, sitekey 빈)
 
 ---
 
