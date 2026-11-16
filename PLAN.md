@@ -1,5 +1,17 @@
 # BugBounty Bot — 자동 버그바운티 탐색·리포트·제출 봇
 
+## ⭐ North Star (최종 목표)
+
+**처음 보는(알지 못하는) 웹 애플리케이션에서 취약점을 자동으로 발견하고, HackerOne에 제출해서 상금을 버는 실전 도구.**
+
+- DVWA·Juice Shop은 **검증 벤치마크**일 뿐, 최종 목표가 아니다.
+- 최종 시험: **알지 못하는 실제 HackerOne 프로그램**에서, 사람이 개입하지 않고(반자동: 제출 전 승인만) 진짜 버그를 찾아 제출·accepted·payout.
+- 성공 지표: **실제 HackerOne 프로그램에서 accepted 버그 ≥ N개, payout ≥ $X** (N·X는 실전 단계에서 정함).
+
+**이 목표를 잊지 않기 위해**: 모든 단계는 "처음 보는 웹에서 취약점을 찾는다"로 수렴해야 한다. 벤치마크(DVWA/Juice Shop)에서 발견률을 높이는 것은 **수단**이지 **목적**이 아니다.
+
+---
+
 **목표**: HackerOne 버그바운티에 버그를 자동으로 발견·리포트·제출해서 상금을 버는 실전 도구. GitHub에 공개해서 명성도 쌓는다.
 
 **핵심 방향 (2026-11-11 결정)**: **과최적화하지 말고, 점진적으로 알려진 취약점을 모두 발견할 수 있는 범용 도구**로 발전시킨다.
@@ -260,6 +272,8 @@ bugbounty/
 | **4. 자동화** | auto-submit + triage track + dedup + earnings | 완전 자동 |
 | **5. 명성** | README + demo(Docker) + walkthrough + CI | GitHub 공개 |
 | **6. 알려진 취약점 커버리지** | DVWA/Juice Shop 알려진 취약점 **모두** 자동 발견 (점진적, 과최적화 금지) | DVWA ~13/13, Juice Shop ~20/20 |
+| **7. 일반화 (범용성)** | 벤치마크 전용 코드 제거, **알지 못하는 웹**에서도 동작하는 범용 스캐너 | **알지 못하는 웹 앱**(예: 다른 학습 앱/실제 사이트)에서 벤치마크와 동등한 findings |
+| **8. 실전 (HackerOne)** | **처음 보는 실제 HackerOne 프로그램**에서 자동 스캔 → triage → 제출(반자동) | **실제 프로그램에서 accepted 버그 ≥ N, payout ≥ $X** (North Star) |
 
 ### 8.1 단계 6 — 알려진 취약점 커버리지 (점진적 로드맵)
 
@@ -276,6 +290,22 @@ bugbounty/
 | **6e. 로직/인프라** | Race Condition, Payment Bypass, DNS/TLS | race: 동시 요청 + 결과 대조. payment: 가격/수량 변형. infra: DNS misconfig, TLS weak cipher, subdomain takeover | Juice Shop: Race Condition, Payment Bypass + infra scanner |
 
 **완료 기준**: 각 서브단계 후 `docs/VULN_REPORT.md` 갱신 + 발견률 측정. 최종: DVWA ~13/13, Juice Shop ~20/20.
+
+### 8.2 단계 7 — 일반화 (범용성)
+
+**목표**: DVWA/Juice Shop에 맞춰진 코드를 일반화해서, **알지 못하는 웹 앱**에서도 취약점을 찾는다.
+
+- 벤치마크 전용 로직(경로 하드코딩, 앱 전용 payload) 제거 → generic 탐지(OpenAPI, form, JS sink, header)
+- **새 벤치마크 추가**: DVWA/Juice Shop 외에 다른 취약 앱(예: WebGoat, bWAPP, Mutillidae)에서 발견률 측정 — 과최적화 방지 검증
+- 완료 기준: **알지 못하는 웹 앱**에서 벤치마크와 동등한 findings + 오탐률 관리
+
+### 8.3 단계 8 — 실전 (HackerOne) — **North Star**
+
+**목표**: 처음 보는 실제 HackerOne 프로그램에서, 사람이 제출 전 승인만 하고, 봇이 스캔→triage→제출을 자동 수행.
+
+- 대상 프로그램 선정(scope, in-scope 자산) → 자동 스캔 → LLM triage(오탐 제거) → **인간 승인** → 제출 → triage track
+- 성공 지표: **accepted 버그 ≥ N, payout ≥ $X** (N·X는 이 단계에서 사람과 합의)
+- 리스크: 오탐 제출(평판 손상) → auto_submit_min(high) + 인간 승인 + rate limit
 
 ---
 

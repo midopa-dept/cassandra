@@ -8,7 +8,11 @@
 
 ## 1. 프로젝트 목표
 
-**최종 목표**: HackerOne 버그바운티에 버그를 자동으로 발견·리포트·제출해서 상금을 버는 실전 도구.
+**⭐ North Star (최종 목표)**: **처음 보는(알지 못하는) 웹 애플리케이션에서 취약점을 자동으로 발견하고, HackerOne에 제출해서 상금을 버는 실전 도구.** (PLAN.md 상단에도 저장)
+
+- DVWA·Juice Shop은 **검증 벤치마크**일 뿐, 최종 목표가 아니다.
+- 최종 시험: **알지 못하는 실제 HackerOne 프로그램**에서, 사람이 제출 전 승인만 하고, 봇이 스캔→triage→제출을 자동 수행.
+- 성공 지표: **실제 HackerOne 프로그램에서 accepted 버그 ≥ N, payout ≥ $X** (N·X는 단계 8에서 정함).
 
 **핵심 방향 (2026-11-11 결정, PLAN.md에도 저장)**:
 - **과최적화 금지** — DVWA/Juice Shop에 맞춰 전용 코드를 만들지 않는다. 일반화 가능한 방식(payload/시그니처/로직)으로 고친다.
@@ -28,6 +32,8 @@
 | 5. 명성 | README/demo/walkthrough/LICENSE | ✅ 완료 |
 | 재설계 | scanner 7개 분할(sqli/xss/idor/ssrf/auth/fuzz/cve) + login | ✅ 완료 |
 | **6. 알려진 취약점 커버리지** | **DVWA 13개 + Juice Shop 20+개 알려진 취약점 모두 자동 발견** | 🔄 **진행 중** |
+| **7. 일반화 (범용성)** | 벤치마크 전용 코드 제거, **알지 못하는 웹**에서도 동작 (새 벤치마크: WebGoat/bWAPP/Mutillidae) | ⬜ 대기 |
+| **8. 실전 (HackerOne)** | **처음 보는 실제 HackerOne 프로그램**에서 자동 스캔→triage→제출(반자동) — **North Star** | ⬜ 대기 |
 
 ### 단계 6 — 블록 (서브단계)
 
