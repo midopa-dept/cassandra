@@ -1,7 +1,7 @@
 # BugBounty Bot — Handoff
 
-**마지막 업데이트**: 2026-11-10
-**현재 단계**: 재설계 중 (scanner 분할)
+**마지막 업데이트**: 2026-11-11
+**현재 단계**: scanner 분할 완료, fuzz/cve/login 작성 대기
 
 ## 완료된 작업
 
@@ -41,50 +41,33 @@
 - `.github/workflows/ci.yml`
 - `tests/test_stage4.py` — 3/3 통과
 
-### 재설계 — 진행 중
+### 재설계 — 완료
 - `core/models.py` — `Asset.base_url` + `Endpoint` dataclass 추가 ✓
 - `asset/crawl.py` — 웹 크롤러 (224줄) ✓
-- `scanner/web.py` — 17줄 truncation (14KB → 17줄) ✗
+- `scanner/web.py` — orchestrator (37줄) ✓
+- `scanner/sqli.py` — SQLi scanner (110줄) ✓
+- `scanner/xss.py` — XSS scanner (81줄) ✓
+- `scanner/idor.py` — IDOR scanner (76줄) ✓
+- `scanner/ssrf.py` — SSRF scanner (92줄) ✓
+- `scanner/auth.py` — Auth bypass scanner (98줄) ✓
 
 ## 현재 문제
 
-### scanner/web.py truncation
+### scanner/web.py truncation — 해결됨
 
 `write_file` 로 14KB 파일 쓰려는데 17줄로 truncation.
 
-| 시도 | 방법 | 결과 |
-|------|------|------|
-| 1 | `write_file` (14KB) | 17줄 truncation |
-| 2 | `cat > file << 'EOF'` | timeout (120초) |
-| 3 | `python3 -c "..."` | syntax error (quote escaping) |
-| 4 | `python3 << 'HEREDOC'` | timeout (30초) |
-| 5 | `python3 -c '...'` | syntax error (line 15) |
-| 6 | `python3 -c "..."` | syntax error (line 6) |
-
-### 해결 방안
-
-**파일 분할** — `scanner/web.py` 를 6개로 분할:
-
-```
-scanner/
-├── web.py          # scan_web() orchestrator (2KB)
-├── sqli.py         # SQLi scanner (4KB)
-├── xss.py          # XSS scanner (3KB)
-├── idor.py         # IDOR scanner (2KB)
-├── ssrf.py         # SSRF scanner (2KB)
-└── auth.py         # Auth bypass scanner (2KB)
-```
-
-각 파일 2~4KB → `write_file` truncation 회피.
+**해결**: 파일 분할로 완료. `scanner/web.py` (37줄 orchestrator) + 5개 개별 scanner (sqli, xss, idor, ssrf, auth).
 
 ## 다음 단계
 
-1. `scanner/web.py` 를 6개로 분할 (sqli, xss, idor, ssrf, auth, fuzz)
-2. 각 파일 2~4KB 로 `write_file` 사용
-3. `scanner/cve.py` (NVD + Wappalyzer)
-4. `scanner/login.py` (DVWA 로그인)
-5. 실전 테스트: DVWA + Juice Shop 에서 실제 findings
-6. HANDOFF.md 업데이트
+1. ~~`scanner/web.py` 를 6개로 분할 (sqli, xss, idor, ssrf, auth, fuzz)~~ ✓
+2. ~~각 파일 2~4KB 로 `write_file` 사용~~ ✓
+3. `scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)
+4. `scanner/cve.py` (NVD + Wappalyzer)
+5. `scanner/login.py` (DVWA 로그인)
+6. 실전 테스트: DVWA + Juice Shop 에서 실제 findings
+7. HANDOFF.md 업데이트
 
 ## 파일 목록
 
@@ -122,16 +105,16 @@ bugbounty/
 │   └── crawl.py        # 웹 크롤러 (224줄)
 ├── scanner/
 │   ├── __init__.py
-│   ├── web.py          # 17줄 truncation (14KB → 17줄)
+│   ├── web.py          # orchestrator (37줄)
 │   ├── infra.py
 │   ├── api.py
 │   ├── logic.py
 │   ├── nuclei.py
-│   ├── sqli.py         # 미작성
-│   ├── xss.py          # 미작성
-│   ├── idor.py         # 미작성
-│   ├── ssrf.py         # 미작성
-│   ├── auth.py         # 미작성
+│   ├── sqli.py         # SQLi scanner (110줄)
+│   ├── xss.py          # XSS scanner (81줄)
+│   ├── idor.py         # IDOR scanner (76줄)
+│   ├── ssrf.py         # SSRF scanner (92줄)
+│   ├── auth.py         # Auth bypass scanner (98줄)
 │   ├── fuzz.py         # 미작성 (unknown 버그)
 │   ├── cve.py          # 미작성 (CVE 기반)
 │   └── login.py        # 미작성 (DVWA 로그인)
@@ -190,8 +173,8 @@ bugbounty/
 1. `Asset` 에 `base_url` 필드 추가 (완료)
 2. `Endpoint` dataclass 추가 (완료)
 3. `asset/crawl.py` 로 endpoint 자동 수집 (완료)
-4. `scanner/web.py` 를 6개로 분할 (진행 중)
-5. 각 scanner (sqli, xss, idor, ssrf, auth) 가 `base_url + endpoint + param` 으로 실제 HTTP 요청
+4. ~~`scanner/web.py` 를 6개로 분할~~ (완료)
+5. 각 scanner (sqli, xss, idor, ssrf, auth) 가 `base_url + endpoint + param` 으로 실제 HTTP 요청 (완료)
 6. `scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)
 7. `scanner/cve.py` — CVE 기반 (NVD + Wappalyzer)
 8. `scanner/login.py` — 인증 처리 (DVWA 등)

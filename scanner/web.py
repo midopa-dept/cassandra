@@ -1,18 +1,36 @@
-"""BugBounty Bot — 웹 앱 스캐너 (SQLi, XSS, IDOR, SSRF, Auth Bypass).
+"""BugBounty Bot — 웹 앱 스캐너 orchestrator.
 
-base_url + endpoint + param 을 자동 탐지해서 payload 주입.
+각 scanner (sqli, xss, idor, ssrf, auth) 를 호출해서 findings 수집.
 """
-import re
-import time
 import httpx
-from urllib.parse import urljoin, urlparse, parse_qs, urlencode
-from typing import Optional
-from core.models import Asset, Endpoint, Finding
+from core.models import Asset, Finding
 from core.logger import get_logger
+from scanner.sqli import scan_sqli
+from scanner.xss import scan_xss
+from scanner.idor import scan_idor
+from scanner.ssrf import scan_ssrf
+from scanner.auth import scan_auth_bypass
 
 log = get_logger("scanner.web")
 
-# ── SQLi ──────────────────────────────────────────────────────────────
 
-SQLI_P
-…(압축: 원래 14024자. 필요하면 다시 읽어라)
+def scan_web(asset: Asset) -> list[Finding]:
+    """웹 앱 스캔: asset.endpoints 를 순회하며 각 scanner 실행."""
+    findings = []
+    if not asset.base_url:
+        log.warning("scan_web: no base_url for asset %s", asset.id)
+        return findings
+
+    client = httpx.Client(base_url=asset.base_url, follow_redirects=True)
+
+    for endpoint in asset.endpoints:
+        # 각 scanner 실행
+        findings.extend(scan_sqli(asset, endpoint, client))
+        findings.extend(scan_xss(asset, endpoint, client))
+        findings.extend(scan_idor(asset, endpoint, client))
+        findings.extend(scan_ssrf(asset, endpoint, client))
+        findings.extend(scan_auth_bypass(asset, endpoint, client))
+
+    client.close()
+    log.info("scan_web: %d total findings on %s", len(findings), asset.base_url)
+    return findings
