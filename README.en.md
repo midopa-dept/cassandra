@@ -220,3 +220,5 @@ python tests/test_live.py     # DVWA + Juice Shop live
 ## License
 
 [MIT](LICENSE) — Copyright (c) 2026 Junha Kang
+
+Uses [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) (Apache-2.0) as the LLM backend.
