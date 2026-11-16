@@ -11,6 +11,7 @@ from scanner.idor import scan_idor
 from scanner.ssrf import scan_ssrf
 from scanner.auth import scan_auth_bypass
 from scanner.fuzz import scan_fuzz
+from scanner.cve import scan_cve
 
 log = get_logger("scanner.web")
 
@@ -32,6 +33,9 @@ def scan_web(asset: Asset) -> list[Finding]:
         findings.extend(scan_ssrf(asset, endpoint, client))
         findings.extend(scan_auth_bypass(asset, endpoint, client))
         findings.extend(scan_fuzz(asset, endpoint, client))
+
+    # CVE 스캔 (endpoint 없이 asset 단위)
+    findings.extend(scan_cve(asset, client))
 
     client.close()
     log.info("scan_web: %d total findings on %s", len(findings), asset.base_url)
