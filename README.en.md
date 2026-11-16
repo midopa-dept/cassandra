@@ -27,32 +27,7 @@ Measured results from running the **observe → judge → attempt → confirm** 
 
 The single most important thing to understand about Cassandra: **it is not "a bot that finds bugs on its own when you run it."** It separates a person's senses from their brain.
 
-```
-┌──────────────────────────────────────────────────────┐
-│                LLM coding agent  =  BRAIN             │
-│                                                        │
-│  · Reads the JSON(observations) Cassandra returns     │
-│  · Judges "what path opens without credentials?"      │
-│  · Decides which tool, with which payload, next       │
-│  · Final judgment: "this is / is not a vulnerability" │
-└───────────────────────────┬──────────────────────────┘
-                             │  run_shell:  python -m core.main <cmd>
-                             │  (tool call — typed by the LLM)
-┌───────────────────────────▼──────────────────────────┐
-│              Cassandra  =  senses + means             │
-│                                                        │
-│  scan       → unauth surface observation → JSON        │
-│  sqli       → injection probe(tech·cols·schema·creds) │
-│  sqli-login → login-form injection(bypass/extract)    │
-│  bruteforce → dictionary vs target's reaction         │
-│  exploit    → runs the payload the LLM specified      │
-│  verify     → reproduce + before/after(reproduced)    │
-└───────────────────────────┬──────────────────────────┘
-                             │  HTTP(S)
-┌───────────────────────────▼──────────────────────────┐
-│   Target web app (DVWA / Juice Shop / WebGoat / bWAPP)│
-└──────────────────────────────────────────────────────┘
-```
+![Architecture](docs/architecture_en.svg)
 
 **Why split it this way.**
 

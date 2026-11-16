@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 520" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="brainGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a1f2e"/>
+      <stop offset="1" stop-color="#12161f"/>
+    </linearGradient>
+    <linearGradient id="senseGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a2a1a"/>
+      <stop offset="1" stop-color="#121f12"/>
+    </linearGradient>
+    <linearGradient id="targetGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1a1a"/>
+      <stop offset="1" stop-color="#1f1212"/>
+    </linearGradient>
+    <marker id="arrowDown" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#8892a0"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="720" height="520" rx="12" fill="#0d1117"/>
+
+  <!-- === BRAIN (LLM Agent) === -->
+  <rect x="40" y="20" width="640" height="130" rx="10" fill="url(#brainGrad)" stroke="#4a5568" stroke-width="1.5"/>
+  <text x="60" y="48" fill="#e2c8ff" font-size="14" font-weight="bold">LLM 코딩 에이전트 = 두뇌</text>
+
+  <text x="60" y="72" fill="#b0b8c8" font-size="12">· Cassandra가 돌려준 JSON(관찰)을 읽는다</text>
+  <text x="60" y="90" fill="#b0b8c8" font-size="12">· "credential 없이 열 수 있는 경로는?" 을 판단한다</text>
+  <text x="60" y="108" fill="#b0b8c8" font-size="12">· 다음에 어떤 도구를, 어떤 payload로 부를지 정한다</text>
+  <text x="60" y="126" fill="#b0b8c8" font-size="12">· "이건 진짜 취약점이다 / 아니다" 최종 판단</text>
+
+  <!-- Arrow: Brain → Cassandra -->
+  <line x1="360" y1="150" x2="360" y2="195" stroke="#8892a0" stroke-width="2" marker-end="url(#arrowDown)"/>
+  <text x="370" y="172" fill="#8892a0" font-size="11">run_shell: python -m core.main &lt;명령&gt;</text>
+  <text x="370" y="186" fill="#666e7a" font-size="10">(도구 호출 — LLM이 직접 타이핑)</text>
+
+  <!-- === CASSANDRA (Senses + Means) === -->
+  <rect x="40" y="200" width="640" height="160" rx="10" fill="url(#senseGrad)" stroke="#3a6a3a" stroke-width="1.5"/>
+  <text x="60" y="228" fill="#a0e8a0" font-size="14" font-weight="bold">Cassandra = 감각기관 + 수단</text>
+
+  <!-- Command list -->
+  <text x="60" y="254" fill="#80c880" font-size="12" font-family="monospace">scan        → 무인증 표면 관찰(페이지·폼·API·에러) → JSON</text>
+  <text x="60" y="274" fill="#80c880" font-size="12" font-family="monospace">sqli        → 주입 탐사(기법·컬럼·스키마·credential) → JSON</text>
+  <text x="60" y="294" fill="#80c880" font-size="12" font-family="monospace">sqli-login  → 로그인 폼 주입(우회/추출)               → JSON</text>
+  <text x="60" y="314" fill="#80c880" font-size="12" font-family="monospace">bruteforce  → 사전 대고, 대상의 반응으로 credential   → JSON</text>
+  <text x="60" y="334" fill="#80c880" font-size="12" font-family="monospace">exploit     → LLM이 지시한 payload 실행              → JSON</text>
+  <text x="60" y="354" fill="#80c880" font-size="12" font-family="monospace">verify      → 재현 + before/after 증거(reproduced)   → JSON</text>
+
+  <!-- Arrow: Cassandra → Target -->
+  <line x1="360" y1="360" x2="360" y2="405" stroke="#8892a0" stroke-width="2" marker-end="url(#arrowDown)"/>
+  <text x="370" y="388" fill="#8892a0" font-size="11">HTTP(S)</text>
+
+  <!-- === TARGET WEB APP === -->
+  <rect x="40" y="410" width="640" height="80" rx="10" fill="url(#targetGrad)" stroke="#6a3a3a" stroke-width="1.5"/>
+  <text x="60" y="440" fill="#e8a0a0" font-size="14" font-weight="bold">대상 웹앱</text>
+  <text x="60" y="464" fill="#c88888" font-size="12">DVWA · Juice Shop · WebGoat · bWAPP · (실전 HackerOne 프로그램)</text>
+
+  <!-- Side labels -->
+  <text x="690" y="90" fill="#4a5568" font-size="10" text-anchor="end" transform="rotate(-90,690,90)">판단</text>
+  <text x="690" y="280" fill="#4a5568" font-size="10" text-anchor="end" transform="rotate(-90,690,280)">사실 보고</text>
+  <text x="690" y="450" fill="#4a5568" font-size="10" text-anchor="end" transform="rotate(-90,690,450)">반응</text>
+</svg>
