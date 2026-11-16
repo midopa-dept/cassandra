@@ -2,9 +2,13 @@
 
 # Cassandra
 
-**처음 보는(알지 못하는) 웹사이트에서 취약점을 찾아내는 블랙박스 보안 도구.**
+**작은 LLM 모델(27B급)을 이용하여, 처음 보는(알지 못하는) 웹사이트에서 취약점을 찾아내는 블랙박스 보안 도구.**
 
-Cassandra는 혼자 판단하지 않습니다. **LLM 코딩 에이전트의 도구(toolset)**로 설계됐습니다 — 에이전트가 `run_shell`로 `python -m core.main <명령>`을 호출하면, Cassandra는 HTTP 트래픽을 주고받아 그 결과를 **JSON**으로 돌려줍니다. "여기에 폼이 있다", "이 파라미터에 `'`를 넣으면 에러가 난다", "이 API가 토큰 없이도 200을 준다"는 **관찰**만 보고합니다. 그 관찰을 읽고 *"credential을 모른 상태에서 열 수 있는 경로는 등록? SQLi 로그인 우회? IDOR?"*을 **판단**하는 것은 두뇌, 즉 **LLM 에이전트**입니다.
+[Qwen3.8 27B Abliterated 모델](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated)과 [Stewart 실행기](https://github.com/midopa-dept/stewart)를 이용하여 작성되었습니다.
+
+Cassandra는 혼자 판단하지 않습니다. LLM 코딩 에이전트의 도구(toolset)로 설계됐습니다 — 에이전트가 `run_shell`로 `python -m core.main <명령>`을 호출하면, Cassandra는 HTTP 트래픽을 주고받아 그 결과를 **JSON**으로 돌려줍니다. "여기에 폼이 있다", "이 파라미터에 `'`를 넣으면 에러가 난다", "이 API가 토큰 없이도 200을 준다"는 **관찰**만 보고합니다. 그 관찰을 읽고 *"credential을 모른 상태에서 열 수 있는 경로는 등록? SQLi 로그인 우회? IDOR?"*을 **판단**하는 것은 두뇌, 즉 **LLM 에이전트**입니다.
+
+검증 과정에서는 작성에 사용된 모델과 실행기를 동일하게 사용했습니다.
 
 ---
 
