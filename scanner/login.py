@@ -78,7 +78,9 @@ def find_login_form(asset: Asset, client: httpx.Client) -> Endpoint | None:
 def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -> bool:
     """로그인: 폼 탐지 + CSRF token + POST + 세션 확인.
 
-    DVWA: 로그인 후 setup.php 로 DB reset (session 유지 필요).
+    DVWA: login.php POST는 항상 302 (성공→index.php, 실패→login.php).
+    'Login' 버튼이 없으면 로그인 처리 자체가 안 되어 200(폼 재렌더) 반환.
+    성공/실패는 status code가 아니라 Location 헤더로 판별.
     """
     if not asset.base_url:
         return False
@@ -109,15 +111,20 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
         except Exception:
             return None
 
+    # DVWA 스타일 감지: base_url 문자열 또는 user_token hidden field 존재
+    is_dvwa = "dvwa" in asset.base_url.lower()
+    tok = _fetch_token()
+    if tok:
+        is_dvwa = True
+
     try:
-        # DVWA 스타일
-        if "dvwa" in asset.base_url.lower():
+        if is_dvwa:
+            # DVWA: 'Login' 버튼 필수 (없으면 로그인 처리 안 됨 → 200)
             data = {
                 "username": credentials.get("user", "admin"),
                 "password": credentials.get("pass", "password"),
                 "Login": "Login",
             }
-            tok = _fetch_token()
             if tok:
                 data["user_token"] = tok
                 log.info("CSRF token: %s", tok)
@@ -127,32 +134,30 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
                 "password": credentials.get("password", credentials.get("pass", "password")),
             }
 
-        # POST 재시도: DVWA는 로그인 실패 시 200(폼 재표시), 성공 시 302.
-        # 토큰/세션 비결정성 대응으로 최대 3회 재시도.
+        # POST + 재시도: DVWA는 실패 시 200(폼 재렌더) 또는 302→login.php.
+        # 성공은 302→index.php. Location 으로 판별, 최대 3회 재시도.
         resp = client.post(login_ep.url, data=data, timeout=15)
         attempts = 0
-        while resp.status_code == 200 and "dvwa" in asset.base_url.lower() and attempts < 3:
+        while is_dvwa and attempts < 3 and _login_failed(resp):
             attempts += 1
-            log.info("login retry %d (200 = failed)", attempts)
+            log.info("login retry %d (status=%d loc=%r)", attempts, resp.status_code, resp.headers.get("location", ""))
             tok = _fetch_token()
             if tok:
                 data["user_token"] = tok
             resp = client.post(login_ep.url, data=data, timeout=15)
 
         # 로그인 성공 확인
-        if resp.status_code in (200, 302):
+        if _login_succeeded(resp):
             if resp.status_code == 302:
                 location = resp.headers.get("location", "")
-                # 상대 경로 절대화
                 if location.startswith("/"):
                     location = urljoin(login_ep.url, location)
                 if "login" not in location.lower():
                     log.info("login success (redirect): %s", location)
 
                     # DVWA: setup.php 로 DB reset + 재로그인
-                    if "dvwa" in asset.base_url.lower():
+                    if is_dvwa:
                         _dvwa_db_reset(client, asset, credentials)
-                        # 재로그인 완료 — 추가 GET 은 session 무효화 방지
                         return True
 
                     # 302 후 메인 페이지 GET (follow_redirects=False 대응)
@@ -169,12 +174,30 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
                 log.info("login success (200): %s", login_ep.url)
                 return True
 
-        log.info("login attempt: %s → %d", login_ep.url, resp.status_code)
-        return resp.status_code == 200
+        log.info("login attempt: %s → %d loc=%r", login_ep.url, resp.status_code, resp.headers.get("location", ""))
+        return False
 
     except Exception as e:
         log.error("login failed: %s", e)
         return False
+
+
+def _login_failed(resp: httpx.Response) -> bool:
+    """로그인 실패: 200(폼 재렌더) 또는 302→login.php."""
+    if resp.status_code == 200:
+        return True
+    if resp.status_code == 302:
+        return "login" in resp.headers.get("location", "").lower()
+    return False
+
+
+def _login_succeeded(resp: httpx.Response) -> bool:
+    """로그인 성공: 302→(login 아님) 또는 200+logout/dashboard."""
+    if resp.status_code == 302:
+        return "login" not in resp.headers.get("location", "").lower()
+    if resp.status_code == 200:
+        return "logout" in resp.text.lower() or "dashboard" in resp.text.lower()
+    return False
 
 
 def _dvwa_db_reset(client: httpx.Client, asset: Asset, credentials: dict | None = None) -> None:
@@ -216,8 +239,6 @@ def _dvwa_db_reset(client: httpx.Client, asset: Asset, credentials: dict | None 
         login_url = urljoin(asset.base_url, "/login.php")
         resp = client.get(login_url, timeout=10)
         m = re.search(r"name='user_token'\s+value='([^']+)'", resp.text)
-        if m:
-            data["user_token"] = m.group(1)
 
         login_data = {
             "username": credentials.get("user", "admin"),
@@ -228,10 +249,21 @@ def _dvwa_db_reset(client: httpx.Client, asset: Asset, credentials: dict | None 
             login_data["user_token"] = m.group(1)
 
         resp = client.post(login_url, data=login_data, timeout=15)
-        if resp.status_code in (200, 302):
-            log.info("DVWA re-login after reset: %d", resp.status_code)
+        # 재시도: 실패(200 또는 302→login) 시 새 토큰으로 재시도
+        attempts = 0
+        while _login_failed(resp) and attempts < 3:
+            attempts += 1
+            log.info("DVWA re-login retry %d (status=%d loc=%r)", attempts, resp.status_code, resp.headers.get("location", ""))
+            r = client.get(login_url, timeout=10)
+            m = re.search(r"name='user_token'\s+value='([^']+)'", r.text)
+            if m:
+                login_data["user_token"] = m.group(1)
+            resp = client.post(login_url, data=login_data, timeout=15)
+
+        if _login_succeeded(resp):
+            log.info("DVWA re-login after reset: success (status=%d loc=%r)", resp.status_code, resp.headers.get("location", ""))
         else:
-            log.warning("DVWA re-login after reset: %d", resp.status_code)
+            log.warning("DVWA re-login after reset: failed (status=%d loc=%r)", resp.status_code, resp.headers.get("location", ""))
 
     except Exception as e:
         log.warning("DVWA DB reset failed: %s", e)
