@@ -1,7 +1,7 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-11
-**현재 단계**: 실전 테스트 — **DVWA 40 + Juice Shop 11 = 51 findings**. DVWA 로그인 비결정성 **완전 해결** (치icken-and-egg: 로그인 실패 시 DB reset 폴백). 다음: Juice Shop XSS/SQLi body 스캔 정밀화
+**현재 단계**: 실전 테스트 — **DVWA 40 + Juice Shop 11 = 51 findings**. **취약점 분석 보고서 작성 완료** (`docs/VULN_REPORT.md`: exploit 실측 9개, 알려진 취약점 대조, 발견률 DVWA ~54% / Juice Shop ~10%). 다음: Juice Shop NoSQLi login 경로 + DOM XSS 탐지
 
 ## 완료된 작업
 
