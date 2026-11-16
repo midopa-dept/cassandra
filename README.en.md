@@ -213,4 +213,4 @@ python tests/test_live.py     # DVWA + Juice Shop live
 
 ## License
 
-MIT
+[MIT](LICENSE) — Copyright (c) 2026 Junha Kang
