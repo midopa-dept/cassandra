@@ -76,7 +76,10 @@ def find_login_form(asset: Asset, client: httpx.Client) -> Endpoint | None:
 
 
 def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -> bool:
-    """로그인: 폼 탐지 + CSRF token + POST + 세션 확인."""
+    """로그인: 폼 탐지 + CSRF token + POST + 세션 확인.
+
+    DVWA: 로그인 후 setup.php 로 DB reset (session 유지 필요).
+    """
     if not asset.base_url:
         return False
 
@@ -127,6 +130,11 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
                     location = urljoin(login_ep.url, location)
                 if "login" not in location.lower():
                     log.info("login success (redirect): %s", location)
+
+                    # DVWA: setup.php 로 DB reset
+                    if "dvwa" in asset.base_url.lower():
+                        _dvwa_db_reset(client, asset)
+
                     return True
 
             if "logout" in resp.text.lower() or "dashboard" in resp.text.lower():
@@ -139,6 +147,35 @@ def login(asset: Asset, client: httpx.Client, credentials: dict | None = None) -
     except Exception as e:
         log.error("login failed: %s", e)
         return False
+
+
+def _dvwa_db_reset(client: httpx.Client, asset: Asset) -> None:
+    """DVWA: setup.php 로 DB reset (session 유지 필요)."""
+    import re
+    try:
+        setup_url = urljoin(asset.base_url, "/setup.php")
+        resp = client.get(setup_url, timeout=10)
+        if resp.status_code != 200:
+            log.warning("setup.php: %d", resp.status_code)
+            return
+
+        # CSRF token 추출
+        m = re.search(r"name='user_token'\s+value='([^']+)'", resp.text)
+        if not m:
+            log.warning("setup.php: no user_token found")
+            return
+
+        data = {
+            "Reset": "Reset",
+            "user_token": m.group(1),
+        }
+        resp = client.post(setup_url, data=data, timeout=30)
+        if resp.status_code in (200, 302):
+            log.info("DVWA DB reset: %d", resp.status_code)
+        else:
+            log.warning("DVWA DB reset: %d", resp.status_code)
+    except Exception as e:
+        log.warning("DVWA DB reset failed: %s", e)
 
 
 def get_authenticated_client(asset: Asset, credentials: dict | None = None) -> httpx.Client:

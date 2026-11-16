@@ -1,7 +1,7 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-11
-**현재 단계**: 실전 테스트 진행 중 — DVWA DB 초기화 + authenticated crawl 수정
+**현재 단계**: 실전 테스트 진행 중 — DVWA session 문제 분석 완료, 해결 방안 수립
 
 ## 완료된 작업
 
@@ -77,6 +77,18 @@ Docker/colima 기동 완료. DVWA(:8081) + Juice Shop(:3000) 컨테이너 Runnin
 **해결 방안:**
 1. DVWA: login 후 setup.php 로 가서 DB reset (POST `Reset=Reset` + `user_token`) → 그 다음 authenticated crawl
 2. Juice Shop: API endpoint 에 기본 params (`?id=1`, `?name=test`) 주입해서 scanner 테스트
+
+**2차 테스트 결과 (DB reset 후):**
+- DVWA: login(302→setup.php) → setup.php GET(200) → DB reset POST(200, success) → `/` GET(302→login.php) → sqli GET(302→login.php)
+- **문제**: DB reset 성공 후에도 session 이 유지 안 됨. reset 후 `/` 로 가면 302→login.php.
+- **원인 (추측)**: DVWA 의 `session_regenerate_id()` 가 reset 시 호출되어 PHPSESSID 가 변경됨. reset 후 **다시 로그인**해야 함.
+- **해결**: reset 후 login.php 로 다시 로그인 (2단계 로그인) 또는 reset 후 setup.php 의 "Continue" 링크를 따라감.
+
+**Juice Shop:**
+- API endpoint 는 찾지만 params 가 비어서 scanner 가 payload 를 못 주입.
+- **해결**: API endpoint 에 기본 params (`?id=1`, `?name=test`) 주입해서 scanner 테스트.
+
+**Colima**: 종료 완료. 다음 테스트 시 `colima start` 후 `docker-compose up -d dvwa juice-shop`.
 
 ## 다음 단계
 
