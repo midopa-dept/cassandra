@@ -10,6 +10,7 @@ from scanner.xss import scan_xss
 from scanner.idor import scan_idor
 from scanner.ssrf import scan_ssrf
 from scanner.auth import scan_auth_bypass
+from scanner.fuzz import scan_fuzz
 
 log = get_logger("scanner.web")
 
@@ -30,6 +31,7 @@ def scan_web(asset: Asset) -> list[Finding]:
         findings.extend(scan_idor(asset, endpoint, client))
         findings.extend(scan_ssrf(asset, endpoint, client))
         findings.extend(scan_auth_bypass(asset, endpoint, client))
+        findings.extend(scan_fuzz(asset, endpoint, client))
 
     client.close()
     log.info("scan_web: %d total findings on %s", len(findings), asset.base_url)

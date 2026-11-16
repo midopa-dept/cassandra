@@ -63,7 +63,7 @@
 
 1. ~~`scanner/web.py` 를 6개로 분할 (sqli, xss, idor, ssrf, auth, fuzz)~~ ✓
 2. ~~각 파일 2~4KB 로 `write_file` 사용~~ ✓
-3. `scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)
+3. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ ✓
 4. `scanner/cve.py` (NVD + Wappalyzer)
 5. `scanner/login.py` (DVWA 로그인)
 6. 실전 테스트: DVWA + Juice Shop 에서 실제 findings
@@ -115,7 +115,7 @@ bugbounty/
 │   ├── idor.py         # IDOR scanner (76줄)
 │   ├── ssrf.py         # SSRF scanner (92줄)
 │   ├── auth.py         # Auth bypass scanner (98줄)
-│   ├── fuzz.py         # 미작성 (unknown 버그)
+│   ├── fuzz.py         # Fuzzing/Anomaly scanner (144줄)
 │   ├── cve.py          # 미작성 (CVE 기반)
 │   └── login.py        # 미작성 (DVWA 로그인)
 ├── triage/
@@ -175,7 +175,7 @@ bugbounty/
 3. `asset/crawl.py` 로 endpoint 자동 수집 (완료)
 4. ~~`scanner/web.py` 를 6개로 분할~~ (완료)
 5. 각 scanner (sqli, xss, idor, ssrf, auth) 가 `base_url + endpoint + param` 으로 실제 HTTP 요청 (완료)
-6. `scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)
+6. ~~`scanner/fuzz.py` — unknown 버그 (fuzzing, anomaly)~~ (완료)
 7. `scanner/cve.py` — CVE 기반 (NVD + Wappalyzer)
 8. `scanner/login.py` — 인증 처리 (DVWA 등)
 9. 실전 테스트: DVWA + Juice Shop 에서 실제 findings
