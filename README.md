@@ -41,7 +41,7 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 
 ## 스캐너 — 실제로 무엇을 잡는가
 
-프로젝트의 **심장**입니다. 처음에는 `scanner/web.py` 하나에 모든 걸 넣다가, **재설계**로 15개 모듈로 쪼개었습니다.
+프로젝트의 **심장**입니다. 처음에는 `scanner/web.py` 하나에 모든 걸 넣다가, **재설계**로 16개 모듈로 쪼개었습니다.
 
 | 모듈 | 잡는 것 |
 |------|---------|
@@ -55,6 +55,7 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 | `api.py` | REST API (auth, rate limit, body injection) |
 | `file.py` | 파일 업로드 RCE, path traversal |
 | `session.py` | **Weak Session**, **Insecure CAPTCHA**, **Password Reset** |
+| `llm.py` | **LLM 스캐너** — 페이지 이해→공격 계획→실행→판정 (7b) |
 | `login.py` | 로그인/세션 처리 (DVWA·Juice Shop) |
 | `web.py` | **orchestrator** — 위 모듈들을 모두 호출 |
 
@@ -74,7 +75,7 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 3. **확장** — infra / api / logic / nuclei / PoC(Playwright) / daemon
 4. **자동화** — auto-submit / track / WebSocket / CI / demo
 5. **명성** — README / demo / walkthrough / LICENSE
-6. **재설계** — `scanner/web.py`를 15개 모듈로 분할 + `login.py` (이후 확장성의 기반)
+6. **재설계** — `scanner/web.py`를 16개 모듈로 분할 + `login.py` (이후 확장성의 기반)
 7. **알려진 취약점 커버리지** — DVWA·Juice Shop의 *알려진* 취약점을 하나씩 더 많이 잡도록 스캐너를 확장 (아래)
 
 **"알려진 취약점 커버리지"**는 블록 단위로 나눴고, 각 블록마다 "실제로 잡는지"를 DVWA·Juice Shop에서 live 테스트로 확인한 뒤 `docs/VULN_REPORT.md`에 기록했습니다.
@@ -86,6 +87,7 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 | **6c** 파일/업로드 | File Upload RCE, Path Traversal | DVWA 42→43 |
 | **6d** 인증/세션 | **Weak Session, Insecure CAPTCHA**, Password Reset | DVWA에서 둘 다 실제 발견 |
 | **6e** 로직/인프라 | Race Condition, Payment Bypass, DNS/TLS | scanner 버그 수정 + 통합 (실전 도메인에서 동작) |
+| **7** 일반화 | **LLM scanner**, bWAPP + WebGoat 벤치마크 | LLM이 페이지를 이해해 공격 계획·실행·판정. 4개 벤치마크 검증 |
 
 **"발견률"이라는 측정 기준**이 있습니다. DVWA는 알려진 취약점 카테고리 ~13개, Juice Shop은 ~20+ 챌린지. 우리가 몇 개를 자동 발견했는지를 계속 재고 있습니다.
 
@@ -93,9 +95,10 @@ Python 기반. 자산 발견 → 스캔 → LLM triage → HackerOne 제출까�
 |----|:----------:|:--------:|:------:|
 | DVWA | ~13개 | **~10개** | **~77%** |
 | Juice Shop | ~20+개 | **~5개** | **~25%** |
+| bWAPP | ~15+개 | **~0개** (정적) | LLM scanner로 보완 |
+| WebGoat | ~15+개 | **~3개** (XSS) | LLM scanner로 보완 |
 
 **다음 단계**:
-- **7** — 일반화: 벤치마크 전용 코드 제거, *새* 벤치마크(WebGoat/bWAPP)에서 검증
 - **8** — 실전: *알지 못하는 실제* HackerOne 프로그램에서 자동 스캔→triage→제출 (**North Star**)
 
 ---
@@ -150,6 +153,8 @@ uv run python -m web.app --config config.yaml
 
 - DVWA: http://localhost:8081
 - Juice Shop: http://localhost:3000
+- bWAPP: http://localhost:8082
+- WebGoat: http://localhost:8083/WebGoat
 - BugBounty Bot: http://localhost:8500
 
 ```bash
@@ -172,12 +177,12 @@ uv run python tests/test_live.py     # DVWA + Juice Shop 실전
 bugbounty/
 ├── core/          # models, config, db, scheduler, logger, main
 ├── asset/         # CT, DNS, API crawl, CVE match, rescan, scope
-├── scanner/       # 15개 모듈 (sqli, xss, idor, ssrf, auth, fuzz, cve,
-│                  #   api, file, session, login) + web.py orchestrator
+├── scanner/       # 16개 모듈 (sqli, xss, idor, ssrf, auth, fuzz, cve,
+│                  #   api, file, session, llm, login) + web.py orchestrator
 ├── triage/        # LLM (judge, severity, report, PoC), dedup
 ├── hackerone/     # client, track, submit
 ├── web/           # Flask + WebSocket dashboard
-├── demo/          # docker-compose (DVWA + Juice Shop + 봇)
+├── demo/          # docker-compose (DVWA + Juice Shop + bWAPP + WebGoat)
 ├── tests/         # 통합 테스트
 └── docs/          # VULN_REPORT, walkthrough
 ```

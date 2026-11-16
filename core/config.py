@@ -22,6 +22,10 @@ class ScanConfig:
     custom: list[str] = field(default_factory=lambda: ["sqli", "xss", "idor", "ssrf", "auth_bypass", "race_condition"])
     rate_limit: int = 10  # req/s per target
     concurrent: int = 5
+    timeout: int = 10  # seconds
+    user_agent: str = "Mozilla/5.0 (BugBountyBot)"
+    max_pages: int = 50
+    follow_redirects: bool = True
 
 
 @dataclass
@@ -30,6 +34,8 @@ class LLMConfig:
     model: str = "gpt-4o"
     api_key_env: str = "OPENAI_API_KEY"
     auto_submit_min: str = "high"  # low | medium | high | critical
+    temperature: float = 0.3
+    max_tokens: int = 2000
 
     @property
     def api_key(self) -> str:

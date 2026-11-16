@@ -7,7 +7,7 @@ hackerone:
     - "juice-shop"
 
 scan:
-  concurrency: 5
+  concurrent: 5
   timeout: 10
   user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   max_pages: 50
@@ -20,15 +20,14 @@ llm:
   max_tokens: 2000
 
 scheduler:
-  ct_interval_hours: 1
-  dns_interval_hours: 6
-  rescan_interval_hours: 24
-  triage_interval_minutes: 1
+  ct_min: 60
+  dns_min: 360
+  rescan_min: 1440
+  triage_min: 1
 
 web:
   host: 0.0.0.0
   port: 8500
-  debug: true
 
 # 실전 테스트 대상
 targets:

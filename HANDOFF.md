@@ -1,8 +1,8 @@
 # BugBounty Bot — Handoff
 
 **마지막 업데이트**: 2026-11-14
-**현재 단계**: **단계 6 (알려진 취약점 커버리지) 완료** (6a~6e) → **단계 7 (일반화) 대기**
-**현재 블록**: 7 — 벤치마크 전용 코드 제거, 새 벤치마크(WebGoat/bWAPP) 검증
+**현재 단계**: **단계 7 (일반화) 완료** → **단계 8 (실전 HackerOne) 대기**
+**현재 블록**: 8 — 실전 HackerOne 프로그램에서 자동 스캔→triage→제출 (API 키 필요)
 
 ---
 
@@ -51,7 +51,22 @@
 
 ---
 
-## 3. 완료된 블록: 6e (로직/인프라) — 결과 (2026-11-14)
+## 3. 완료된 블록: 7 (일반화) — 결과 (2026-11-14)
+
+**방향 전환**: 정적 scanner(패턴 매칭)가 주력 → **LLM이 스캐너 그 자체**. LLM이 페이지를 이해해 맥락에 맞는 공격을 계획·실행·판정.
+
+**결과**:
+- **7a 벤치마크 코드 감사**: scanner/에서 dvwa/juice 하드코딩은 주석만(코드 아님). login.py의 크레덴셜은 "예시"로 명시.
+- **7b LLM scanner** (`scanner/llm.py`): 분석(페이지→JSON 테스트 계획)→실행(httpx)→검증(LLM 판정) 3단계. triage/llm.py의 LLMClient 재사용. Mock LLM으로 파이프라인 검증(DVWA sqli → llm_sqli finding).
+- **7c 새 벤치마크**: bWAPP(raesene/bwapp, 8082) + WebGoat(webgoat/webgoat, 8083/WebGoat) Docker 추가.
+- **7d 4개 벤치마크 실행**: DVWA 68, Juice Shop 23, bWAPP 3, WebGoat 11. bWAPP·WebGoat는 SPA/POST 기반이라 정적 scanner가 제한적 — LLM scanner가 보완할 부분.
+- **config.yaml 버그 수정**: ScanConfig/LLMConfig/SchedulerConfig 필드 불일치(concurrency→concurrent, timeout/user_agent/max_pages 추가, scheduler *_hours→*_min).
+
+**한계**: bWAPP·WebGoat는 crawl이 제한적(SPA, POST-heavy). LLM scanner는 API 키가 있어야 실동작.
+
+---
+
+## 4. 완료된 블록: 6e (로직/인프라) — 결과 (2026-11-14)
 
 **목표**: Race Condition, Payment Bypass, DNS/TLS 자동 발견.
 
@@ -64,7 +79,7 @@
 
 ---
 
-## 4. 완료된 블록: 6d (인증/세션) — 결과 (2026-11-14)
+## 5. 완료된 블록: 6d (인증/세션) — 결과 (2026-11-14)
 
 **목표**: Weak Session, CAPTCHA, Password Reset 자동 발견.
 
@@ -81,7 +96,7 @@
 
 ---
 
-## 5. 완료된 블록: 6c (파일/업로드) — 결과 (2026-11-12)
+## 6. 완료된 블록: 6c (파일/업로드) — 결과 (2026-11-12)
 
 **목표**: File Upload, File Download, path traversal 자동 발견.
 
@@ -111,7 +126,7 @@
 
 ---
 
-## 6. 진행 기록
+## 7. 진행 기록
 
 ### 2026-11-11 (5~7차 세션) — 실전 테스트 + 분석
 
@@ -138,7 +153,7 @@
 
 ---
 
-## 7. 파일 구조
+## 8. 파일 구조
 
 ```
 bugbounty/
@@ -158,7 +173,7 @@ bugbounty/
 └── tests/             # test_mvp, test_asset, test_stage3, test_stage4, test_live, test_dvwa_login
 ```
 
-## 8. 테스트
+## 9. 테스트
 
 | 테스트 | 내용 | 결과 |
 |--------|------|------|
@@ -170,7 +185,7 @@ bugbounty/
 
 **실행**: `colima start stewart --cpu 2 --memory 4 --mount /Volumes/Dev/stewart-work:w` → `unset DOCKER_HOST` → `cd demo && docker-compose up -d dvwa juice-shop` → `.venv/bin/python tests/test_live.py`
 
-## 9. 환경
+## 10. 환경
 
 - **colima**: **stewart 프로파일** (2 CPU / 4GiB, `/Volumes/Dev/stewart-work` 마운트)
   - 기동: `colima start stewart --cpu 2 --memory 4 --mount /Volumes/Dev/stewart-work:w`

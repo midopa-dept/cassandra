@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # BugBounty Bot demo
 #
-# DVWA + Juice Shop + BugBounty Bot
+# DVWA + Juice Shop + bWAPP + WebGoat + BugBounty Bot
 #
 # 사용:
 #   1. .env 파일에 H1_API_KEY, OPENAI_API_KEY 설정
@@ -10,6 +10,8 @@
 # 결과:
 #   - DVWA: http://localhost:8081
 #   - Juice Shop: http://localhost:3000
+#   - bWAPP: http://localhost:8082
+#   - WebGoat: http://localhost:8083/WebGoat
 #   - BugBounty Bot: http://localhost:8500
 
 set -euo pipefail
@@ -39,6 +41,8 @@ echo "  Services started:"
 echo "=========================================="
 echo "  DVWA:         http://localhost:8081"
 echo "  Juice Shop:   http://localhost:3000"
+echo "  bWAPP:        http://localhost:8082"
+echo "  WebGoat:      http://localhost:8083/WebGoat"
 echo "  BugBounty:    http://localhost:8500"
 echo ""
 echo "  Wait 30 seconds for services to start..."

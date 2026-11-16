@@ -1,7 +1,7 @@
 # BugBounty Bot — 취약점 분석 보고서
 
-**작성일**: 2026-11-14 (6d: Weak Session + Insecure CAPTCHA 추가)
-**대상**: DVWA (vulnerable/web-dvwa:latest), OWASP Juice Shop (bkimminich/juice-shop:latest, v20.2.0)
+**작성일**: 2026-11-14 (7: bWAPP + WebGoat 벤치마크 추가, LLM scanner)
+**대상**: DVWA (vulnerable/web-dvwa:latest), OWASP Juice Shop (bkimminich/juice-shop:latest, v20.2.0), bWAPP (raesene/bwapp:latest), OWASP WebGoat (webgoat/webgoat:latest)
 **방법**: scanner findings + **실제 exploit 실측** (payload 주입 → 결과 확인)
 
 ---
@@ -12,6 +12,8 @@
 |----|----------|----------------------|---------------------|-------------|
 | DVWA | **45** | **12개** (SQLi×3, XSS, Stored XSS×2, **File Upload RCE**, IDOR, LFI, 명령주입, **Weak Session**, **Insecure CAPTCHA**) | **~10/13** | 없음 |
 | Juice Shop | **22** | **5개** (Stored XSS, IDOR, NoSQLi login, Admin Registration, DOM XSS) | **~5/20+** | 없음 |
+| bWAPP | **3** | **0** (cve×3: PHP 프레임워크 감지) | **~0/15+** | 없음 |
+| WebGoat | **11** | **3** (xss×3) | **~3/15+** | fuzz_anomaly×8 |
 
 **결론:**
 1. **새로운 취약점이 아니다** — 두 앱 모두 의도적으로 취약한 학습용 앱(OWASP). 우리가 발견한 것은 **알려진 취약점**이다.
@@ -176,6 +178,22 @@ Juice Shop v20.2.0의 알려진 챌린지 (~20+, SOLUTIONS.md 기준):
 - **NoSQLi login**: `/rest/user/login`에 `{$ne:None}` → 500 (operator가 백엔드에 도달, 공격면 존재)
 - **DOM XSS**: `main.js`에서 `innerHTML`/`document.write` sink가 `location.href`/`document.location` source를 읽음 — 정적 분석으로 탐지
 - **Admin Registration**: `POST /api/Users`에 `role:admin` → **admin 권한 계정 생성** (201)
+
+---
+
+### 3.5 bWAPP (raesene/bwapp:latest)
+
+**endpoints**: 1 (crawl이 index.php만 발견 — bWAPP은 프레임워크 기반, 대부분 POST로 동작)
+**findings**: 3 (cve×3: PHP 프레임워크 감지)
+
+bWAPP은 15+ 취약점 카테고리(SQLi, XSS, CSRF, LFI, RCE, etc.)를 포함하지만, 대부분 **POST 폼 + 특정 파라미터**로 동작해서 GET-based scanner가 못 잡음. LLM scanner(7b)가 이 부분을 보완할 것으로 기대.
+
+### 3.6 WebGoat (webgoat/webgoat:latest, 2026.5)
+
+**endpoints**: 3 (crawl이 /WebGoat, /WebGoat/start, /WebGoat/lessons만 발견 — SPA)
+**findings**: 11 (xss×3, fuzz_anomaly×8)
+
+WebGoat는 15+ 레슨(DOM XSS, CSRF, SQLi, Brute Force, etc.)을 포함하지만, **SPA(React)** 구조라 crawl이 제한적. xss×3는 레슨 페이지의 reflected XSS. fuzz_anomaly×8는 레슨 페이지의 500 에러.
 
 ---
 
