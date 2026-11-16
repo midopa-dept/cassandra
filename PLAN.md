@@ -2,6 +2,12 @@
 
 **목표**: HackerOne 버그바운티에 버그를 자동으로 발견·리포트·제출해서 상금을 버는 실전 도구. GitHub에 공개해서 명성도 쌓는다.
 
+**핵심 방향 (2026-11-11 결정)**: **과최적화하지 말고, 점진적으로 알려진 취약점을 모두 발견할 수 있는 범용 도구**로 발전시킨다.
+- **과최적화 금지**: DVWA/Juice Shop에 맞춰서만 고치지 않는다. 일반화 가능한 방식으로 고친다.
+- **점진적**: 한 번에 모든 취약점을 잡으려 하지 않는다. 단계별로 취약점 유형을 추가한다.
+- **목표**: 알려진 취약점(DVWA ~13개, Juice Shop ~20+개)을 **모두** 자동 발견할 수 있는 도구.
+- **측정**: `docs/VULN_REPORT.md`의 발견률(DVWA ~54%, Juice Shop ~10%)을 단계별로 높인다.
+
 ---
 
 ## 1. 범위
@@ -253,6 +259,23 @@ bugbounty/
 | **3. 확장** | scanner(infra/api/logic) + nuclei + poc(스크린샷) | 전체 버그 종류 |
 | **4. 자동화** | auto-submit + triage track + dedup + earnings | 완전 자동 |
 | **5. 명성** | README + demo(Docker) + walkthrough + CI | GitHub 공개 |
+| **6. 알려진 취약점 커버리지** | DVWA/Juice Shop 알려진 취약점 **모두** 자동 발견 (점진적, 과최적화 금지) | DVWA ~13/13, Juice Shop ~20/20 |
+
+### 8.1 단계 6 — 알려진 취약점 커버리지 (점진적 로드맵)
+
+**원칙**: 과최적화 금지. 각 항목은 **일반화 가능한 방식**(payload/시그니처/로직)으로 고친다. DVWA/Juice Shop은 **검증 벤치마크**일 뿐, 그 앱 전용 코드는 만들지 않는다.
+
+**현재 발견률** (docs/VULN_REPORT.md): DVWA ~54% (7/13), Juice Shop ~10% (2/20)
+
+| 서브단계 | 추가 취약점 | 일반화 방식 | 벤치마크 검증 |
+|----------|-----------|-----------|--------------|
+| **6a. API/NoSQL** | NoSQLi login, Admin Registration, Login Admin | API body injection: `$ne`/`$gt`/`$regex` operator + 200/201 응답 판별. OpenAPI/Swagger 자동 탐지(`/openapi.json`, `/swagger.json`)로 endpoint·method·body schema 자동 추출 | Juice Shop: NoSQLi login, Admin Registration, Login Admin |
+| **6b. XSS 확장** | DOM XSS, Stored XSS(DVWA) | DOM: JS 번들에서 `innerHTML`/`document.write`/`location.hash` sink 탐지. Stored: POST/PUT body에 XSS payload → GET으로 반사 확인(기존 body scanner 확장) | Juice Shop: DOM XSS, DVWA: Stored XSS |
+| **6c. 파일/업로드** | File Upload, File Download | 업로드 endpoint: multipart POST + 확장자/Content-Type 변형. 다운로드: path traversal(`../`) | Juice Shop: File Upload, File Download |
+| **6d. 인증/세션** | Weak Session, CAPTCHA, Password Reset | 세션: cookie entropy/만료 분석. CAPTCHA: 자동 풀기(OCR) + 우회. Password Reset: token 예측/재사용 | Juice Shop: Weak Session, CAPTCHA, Password Reset |
+| **6e. 로직/인프라** | Race Condition, Payment Bypass, DNS/TLS | race: 동시 요청 + 결과 대조. payment: 가격/수량 변형. infra: DNS misconfig, TLS weak cipher, subdomain takeover | Juice Shop: Race Condition, Payment Bypass + infra scanner |
+
+**완료 기준**: 각 서브단계 후 `docs/VULN_REPORT.md` 갱신 + 발견률 측정. 최종: DVWA ~13/13, Juice Shop ~20/20.
 
 ---
 
