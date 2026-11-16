@@ -8,7 +8,7 @@
 
 [Qwen3.8 27B Abliterated 모델](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated)과 [Stewart 실행기](https://github.com/midopa-dept/stewart)를 이용하여 작성되었습니다.
 
-Cassandra는 혼자 판단하지 않습니다. **LLM 코딩 에이전트의 도구(toolset)**로 설계됐습니다 — 에이전트가 `run_shell`로 `python -m core.main <명령>`을 호출하면, Cassandra는 HTTP 트래픽을 주고받아 그 결과를 **JSON**으로 돌려줍니다. "여기에 폼이 있다", "이 파라미터에 `'`를 넣으면 에러가 난다", "이 API가 토큰 없이도 200을 준다"는 **관찰**만 보고합니다. 그 관찰을 읽고 *"credential을 모른 상태에서 열 수 있는 경로는 등록? SQLi 로그인 우회? IDOR?"*을 **판단**하는 것은 두뇌, 즉 **LLM 에이전트**입니다.
+Cassandra는 혼자 판단하지 않습니다. **LLM 코딩 에이전트의 도구**(toolset)로 설계됐습니다 — 에이전트가 `run_shell`로 `python -m core.main <명령>`을 호출하면, Cassandra는 HTTP 트래픽을 주고받아 그 결과를 **JSON**으로 돌려줍니다. "여기에 폼이 있다", "이 파라미터에 `'`를 넣으면 에러가 난다", "이 API가 토큰 없이도 200을 준다"는 **관찰**만 보고합니다. 그 관찰을 읽고 "credential을 모른 상태에서 열 수 있는 경로는 등록? SQLi 로그인 우회? IDOR?"를 **판단**하는 것은 두뇌, 즉 **LLM 에이전트**입니다.
 
 검증 과정에서는 작성에 사용된 모델과 실행기를 동일하게 사용했습니다.
 
@@ -45,7 +45,7 @@ Cassandra를 이해하는 가장 중요한 것 하나: **이것은 "실행하면
 
 ### 한 루프를 실제로 따라가기
 
-사람이 LLM 에이전트에게 *"http://localhost:8081에서 취약점 찾아봐"*라고 하면, 이런 흐름이 됩니다:
+사람이 LLM 에이전트에게 "http://localhost:8081에서 취약점 찾아봐"라고 하면, 이런 흐름이 됩니다:
 
 ```
 사람  : http://localhost:8081 취약점 찾아봐
